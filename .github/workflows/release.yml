@@ -39,8 +39,8 @@ jobs:
           python-version: '3.12.10'
           enable-cache: false
 
-      - name: Verify the tag matches the application version
-        run: uv run --no-project --python 3.12.10 python scripts/release.py --tag "$env:RELEASE_TAG" --verify-only
+      - name: Set the application version from the release tag
+        run: uv run --no-project --python 3.12.10 python scripts/release.py --tag "$env:RELEASE_TAG" --prepare
 
       - name: Install locked application, GPU, and build dependencies
         run: uv sync --locked --python 3.12.10 --extra gpu --extra build
@@ -64,6 +64,7 @@ jobs:
           if ($appProcess.ExitCode -ne 0) { throw 'Packaged application failed its smoke check.' }
           $report = Get-Content -LiteralPath 'artifacts/packaged-smoke.json' -Raw | ConvertFrom-Json
           if (-not $report.ok) { throw 'Packaged application reported a failed smoke check.' }
+          if ($report.version -ne $env:RELEASE_TAG.Substring(1)) { throw 'Packaged application version does not match the release tag.' }
 
       - name: Create versioned ZIP and SHA-256 checksum
         run: .venv/Scripts/python.exe scripts/release.py --tag "$env:RELEASE_TAG"
