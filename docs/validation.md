@@ -6,12 +6,14 @@ CUDA FP16, Hungarian, beam size 5, and minimum match confidence 0.45.
 
 ## Automated checks
 
-- `pytest -q`: **42 passed**. Coverage includes Hungarian VPN forms, confidence
+- `pytest -q`: **56 passed**. Coverage includes Hungarian VPN forms, confidence
   filtering, overlapping-window duplicates, rapid repeated mentions, bounded
   audio history, overflow/reset invalidation, validated settings, shared UI and
   overlay state, manual corrections, rejection of stale queued results, tray
   restoration and explicit exit, four corner anchors, settings migration, and
-  versioned release packaging.
+  versioned release packaging, cleanup selection and cancellation, worker stop
+  ordering, preservation of settings, cleanup error recovery, safe handling of
+  Windows junctions, and process-local download cache locations.
 - `ruff check .` and `ruff format --check .`: passed.
 - The real widgets were rendered and visually inspected. Preview images are
   generated locally in `artifacts/` using `scripts/preview.py`.
@@ -87,12 +89,30 @@ are excluded from Git. The reproducible source and dependency lock are committed
 - Actionlint 1.7.12 accepted `.github/workflows/release.yml`. The dependency
   lock is current. The local version validator accepted `v0.1.0`; automated
   tests rejected malformed tags and mismatched source versions.
-- Local packaging produced a 1,543,646,254-byte ZIP (about 1.44 GiB) containing
+- Local packaging produced a ZIP of about 1.44 GiB containing
   500 files. The executable, cuBLAS, cuDNN, VAD assets, launch instructions, and
   version manifest were present. Every ZIP CRC and the SHA-256 checksum passed.
 - The GitHub-hosted build and publication were not run. No tags, commits, or
   releases were published remotely. A matching version tag must be published by
   the user to exercise the hosted workflow.
+
+## Portable cleanup
+
+- The native Windows app was exercised through its Storage & cleanup button,
+  using temporary app-data folders. The real model cache was kept untouched.
+- With default selections, cleanup removed models, saved the current counter,
+  kept settings, removed the instance lock, and exited. Selecting settings as
+  well removed both data categories and the empty app-data directory. The tray
+  was available during both runs. Neither run loaded a model or opened the mic.
+- Automated tests also checked cancellation, waiting for recognition to finish,
+  retry after a file error, preservation of unrelated files, and root/nested
+  Windows junction behavior against disposable fixtures.
+- The rebuilt executable passed its smoke check, including rendering the
+  storage dialog and verifying the default selections. The portable ZIP was
+  refreshed with the new executable and cleanup instructions.
+- Large-v3 CUDA inference and Silero VAD still passed against the existing
+  cache after configuring process-local downloader cache paths. No microphone
+  was opened by that diagnostic.
 
 ## Rehearsal still needed
 

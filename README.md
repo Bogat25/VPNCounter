@@ -33,6 +33,14 @@ The first session downloads the public model to
 No API key is needed. Audio is kept in a bounded memory buffer; it is not saved
 or uploaded. Settings and the last counter value are stored locally.
 
+The app stays portable. Click **Storage & cleanup** in the Recognition panel to
+open the data folder or remove downloaded models. **Clean up and exit** stops
+recognition before removing files; **Also remove settings and saved counter**
+is optional. Models are selected by default. Removed models download again on
+the next listening session. Normal exits and app updates keep your cached models.
+To remove everything, select both cleanup options, let the app exit, then delete
+its portable folder. Deleting the portable folder alone leaves the cached data.
+
 ## Set up another computer
 
 Install Python 3.12 and [uv](https://docs.astral.sh/uv/), then run:

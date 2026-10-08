@@ -11,7 +11,11 @@ from scipy.signal import resample_poly
 
 from vpn_counter.audio import AudioBuffer
 from vpn_counter.matching import RecognitionBatch, SpeechWord
-from vpn_counter.runtime import audio_thread_context, configure_gpu_libraries
+from vpn_counter.runtime import (
+    audio_thread_context,
+    configure_gpu_libraries,
+    configure_model_storage,
+)
 from vpn_counter.settings import data_directory
 
 
@@ -48,6 +52,7 @@ class EngineOptions:
 
 
 def load_model(options: EngineOptions, notify=lambda _message: None):
+    configure_model_storage()
     configure_gpu_libraries()
     import ctranslate2
     from faster_whisper import WhisperModel
@@ -65,7 +70,12 @@ def load_model(options: EngineOptions, notify=lambda _message: None):
     model_path = (
         str(model_directory)
         if cached
-        else download_model(options.model, output_dir=str(model_directory), use_auth_token=False)
+        else download_model(
+            options.model,
+            output_dir=str(model_directory),
+            cache_dir=str(data_directory() / "models/.cache/huggingface/hub"),
+            use_auth_token=False,
+        )
     )
     model = WhisperModel(
         model_path,

@@ -45,6 +45,12 @@ flowchart LR
   [WASAPI implementation](https://github.com/PortAudio/portaudio/blob/master/src/hostapi/wasapi/pa_win_wasapi.c).
 - `settings.py`: validates and atomically stores settings in local application
   data. A corrupt settings file falls back to defaults.
+- `storage.py`: the Storage & cleanup dialog, with models selected by default
+  and optional settings removal. Its confirmation explains that cleanup exits
+  the app and that removed models need to download again.
+- `cleanup.py`: removes only selected models and settings under the app's data
+  directory. It validates the resolved target and rejects linked root/model
+  directories. Nested junctions are removed without deleting their targets.
 
 ## Session boundaries
 
@@ -59,6 +65,17 @@ Shutdown requests the worker to stop and waits without blocking the GUI event
 loop. It never forcibly terminates a thread using the GPU. A model download or
 inference already in progress finishes before shutdown completes. A local lock
 prevents accidentally launching two copies against the same GPU and settings.
+
+Cleanup first stops the speech worker, including any in-progress download or
+inference, then removes files on a separate thread while the UI stays responsive.
+On success the app exits. Settings removal disables saving on shutdown so the
+file is not recreated. After the event loop ends, the instance lock is released
+and the data directory is removed only if empty. Failures are shown in the UI
+and leave the app open for retry; some files may already have been removed.
+The portable executable folder is never deleted by this control.
+Downloader Hub and Xet caches for new sessions also live under `models/.cache`,
+so models cleanup includes them. Cache locations are set only in the app process;
+cleanup does not touch shared Hugging Face caches used by other applications.
 
 When the Windows tray is available, closing the control panel hides it while
 recognition and the overlay continue. The V tray icon restores the panel and

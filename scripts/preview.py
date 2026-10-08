@@ -9,6 +9,7 @@ from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 
 from vpn_counter.settings import Settings
+from vpn_counter.storage import StorageDialog
 from vpn_counter.ui import MainWindow
 
 application = QApplication([])
@@ -25,5 +26,10 @@ output = Path("artifacts")
 output.mkdir(exist_ok=True)
 window.grab().save(str(output / "control-panel.png"))
 window.overlay.grab().save(str(output / "overlay.png"))
+dialog = StorageDialog(window)
+dialog.show()
+application.processEvents()
+dialog.grab().save(str(output / "storage-cleanup.png"))
+dialog.close()
 window.close()
-print("Preview saved to artifacts/control-panel.png and artifacts/overlay.png")
+print("Previews saved to artifacts/control-panel.png, overlay.png, and storage-cleanup.png")

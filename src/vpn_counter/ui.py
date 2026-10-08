@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFrame,
     QGridLayout,
@@ -29,16 +30,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from vpn_counter.cleanup import CleanupOptions, CleanupWorker
 from vpn_counter.engine import EngineOptions, SpeechWorker, microphones
 from vpn_counter.matching import MentionLedger, RecognitionBatch, find_mentions
 from vpn_counter.native import GlobalHotkeys
 from vpn_counter.overlay import CounterOverlay
 from vpn_counter.runtime import gpu_description
 from vpn_counter.settings import Settings
+from vpn_counter.storage import StorageDialog
 
 STYLE = """
 QWidget { color: #eaeaf4; font-family: 'Segoe UI'; font-size: 13px; }
 QMainWindow, QWidget#root { background: #0c0d13; }
+QDialog { background: #151620; }
 QLabel { background: transparent; }
 QLabel#title { font-size: 25px; font-weight: 700; letter-spacing: -1px; }
 QLabel#subtitle, QLabel#muted { color: #999bb0; }
@@ -137,6 +141,9 @@ class MainWindow(QMainWindow):
         self.count = self.settings.last_count
         self.ledger = MentionLedger()
         self.worker: SpeechWorker | None = None
+        self.cleanup_worker: CleanupWorker | None = None
+        self._cleanup_options: CleanupOptions | None = None
+        self.cleanup_completed = False
         self.state = "idle"
         self._pending_close = False
         self._quit_requested = False
@@ -204,7 +211,9 @@ class MainWindow(QMainWindow):
             return
         self.tray.setToolTip(f"VPN Counter · {self.count} mentions · {self.status_label.text()}")
         self.tray_listen.setText(self.start_button.text())
-        self.tray_listen.setEnabled(self.start_button.isEnabled() and not self._quit_requested)
+        self.tray_listen.setEnabled(
+            self.start_button.isEnabled() and not self._quit_requested and not self._cleanup_options
+        )
 
     def _tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason in (
@@ -372,6 +381,13 @@ class MainWindow(QMainWindow):
         setup_layout.addLayout(threshold_row)
         self.decode_label = label("Microphone opens when you start listening.", "muted", True)
         setup_layout.addWidget(self.decode_label)
+        self.storage_button = QPushButton("Storage && cleanup")
+        self.storage_button.setObjectName("storageCleanup")
+        self.storage_button.setToolTip(
+            "Open the data folder or remove downloaded models and settings."
+        )
+        self.storage_button.clicked.connect(self.open_storage)
+        setup_layout.addWidget(self.storage_button)
         setup_layout.addStretch()
         main.addWidget(setup, 6)
         layout.addLayout(main)
@@ -601,7 +617,7 @@ class MainWindow(QMainWindow):
             widget.setEnabled(enabled)
 
     def toggle_listening(self) -> None:
-        if self._pending_close:
+        if self._pending_close or self._cleanup_options is not None:
             return
         if self.worker is not None:
             if self.state == "listening":
@@ -687,8 +703,69 @@ class MainWindow(QMainWindow):
         if self.state != "error":
             self.state = "idle"
             self._set_status("Session ended · counter kept")
-        if self._pending_close:
+        if self._cleanup_options is not None:
+            self._begin_cleanup()
+        elif self._pending_close:
             self.close()
+
+    def open_storage(self) -> None:
+        if self._cleanup_options is not None:
+            return
+        dialog = StorageDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.request_cleanup(dialog.options())
+
+    def request_cleanup(self, options: CleanupOptions) -> None:
+        if self._cleanup_options is not None or not (options.models or options.settings):
+            return
+        self._cleanup_options = options
+        self.storage_button.setEnabled(False)
+        self.start_button.setEnabled(False)
+        self._enable_setup(False)
+        if self.worker is not None:
+            self.end_session()
+            self._set_status("Waiting for recognition to stop before cleanup…")
+        else:
+            self._begin_cleanup()
+
+    def _begin_cleanup(self) -> None:
+        self.state = "cleaning"
+        self._enable_setup(False)
+        self.start_button.setEnabled(False)
+        self.end_button.setEnabled(False)
+        self.busy.show()
+        self._set_status("Removing selected app data…")
+        self.cleanup_worker = CleanupWorker(self._cleanup_options, self)
+        self.cleanup_worker.finished.connect(self._cleanup_finished)
+        self.cleanup_worker.start()
+
+    def _cleanup_finished(self) -> None:
+        worker = self.cleanup_worker
+        self.cleanup_worker = None
+        error = worker.error
+        worker.deleteLater()
+        self.busy.hide()
+        if error:
+            self._cleanup_options = None
+            self._pending_close = False
+            self._quit_requested = False
+            self.state = "idle"
+            self._enable_setup(True)
+            self.start_button.setEnabled(True)
+            self.storage_button.setEnabled(True)
+            self._set_status("Cleanup needs attention")
+            self.open_control_panel()
+            QMessageBox.warning(
+                self,
+                "Cleanup incomplete",
+                "Some selected files could not be removed. Other files may already have been "
+                "removed. Close any programs using the data folder and try again.\n\n" + error,
+            )
+            return
+        self.cleanup_completed = True
+        if self._cleanup_options.settings:
+            self._save_enabled = False  # Do not recreate settings during shutdown.
+        self.quit_application()
 
     def _batch(self, batch: RecognitionBatch) -> None:
         if (
@@ -766,6 +843,11 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._cleanup_options is not None and not self.cleanup_completed:
+            # Keep the event loop and its workers alive until cleanup succeeds
+            # or reports an error, even if Exit is selected from the tray.
+            event.ignore()
+            return
         if self._tray_available and not self._quit_requested:
             self.hide_to_tray()
             event.ignore()

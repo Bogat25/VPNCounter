@@ -1,14 +1,18 @@
 import os
+import time
 from dataclasses import replace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QRect, Qt
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtCore import QObject, QRect, Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon
 
+from vpn_counter.cleanup import CleanupOptions
 from vpn_counter.matching import RecognitionBatch, SpeechWord
 from vpn_counter.settings import Settings
+from vpn_counter.storage import StorageDialog
 from vpn_counter.ui import MainWindow
 
 
@@ -136,3 +140,86 @@ def test_selecting_custom_position_unlocks_dragging(window):
     window.position_combo.setCurrentIndex(window.position_combo.findData("custom"))
     assert not window.lock_overlay.isChecked()
     assert not window.overlay.locked
+
+
+def wait_for_cleanup(application, widget):
+    deadline = time.monotonic() + 5
+    while widget.cleanup_worker is not None and time.monotonic() < deadline:
+        application.processEvents()
+        QTest.qWait(10)
+    assert widget.cleanup_worker is None
+
+
+def test_storage_dialog_defaults_and_cancel_preserve_data(window, monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    dialog = StorageDialog(window)
+    assert dialog.models.isChecked()
+    assert not dialog.settings.isChecked()
+    dialog.models.setChecked(False)
+    assert not dialog.clean_button.isEnabled()
+    dialog.settings.setChecked(True)
+    assert dialog.clean_button.isEnabled()
+    monkeypatch.setattr(StorageDialog, "exec", lambda _dialog: QDialog.DialogCode.Rejected)
+    window.storage_button.click()
+    assert window._cleanup_options is None
+    assert not (tmp_path / "VPNCounter").exists()
+
+
+@pytest.mark.parametrize("reset_settings", [False, True])
+def test_cleanup_waits_for_recognition_and_does_not_recreate_removed_settings(
+    window, application, monkeypatch, tmp_path, reset_settings
+):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    data = tmp_path / "VPNCounter"
+    model = data / "models/large-v3/model.bin"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"test model")
+    Settings().save()
+
+    class Worker(QObject):
+        stopped = False
+
+        def stop(self):
+            self.stopped = True
+
+    worker = Worker()
+    window.worker = worker
+    window.state = "listening"
+    window._save_enabled = True
+    window.adjust_count(7)
+    window.request_cleanup(CleanupOptions(models=True, settings=reset_settings))
+    assert worker.stopped
+    assert model.exists()  # No deletion while the recognition thread is alive.
+    assert window.cleanup_worker is None
+    assert not window.start_button.isEnabled()
+    window.quit_application()
+    assert window.isVisible()  # Exit cannot destroy a worker during cleanup.
+    window._finished()  # Simulate recognition's finished signal.
+    wait_for_cleanup(application, window)
+    assert window.cleanup_completed
+    assert not model.exists()
+    assert not window.isVisible()
+    assert (data / "settings.json").exists() is not reset_settings
+    if not reset_settings:
+        assert Settings.load().last_count == 7
+
+
+def test_cleanup_failure_keeps_app_open_for_retry(window, application, monkeypatch, tmp_path):
+    from vpn_counter import cleanup
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    def fail(_options):
+        raise PermissionError("test file is in use")
+
+    warnings = []
+    monkeypatch.setattr(cleanup, "remove_app_data", fail)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    window.request_cleanup(CleanupOptions())
+    wait_for_cleanup(application, window)
+    assert not window.cleanup_completed
+    assert window.isVisible()
+    assert window.storage_button.isEnabled()
+    assert window.start_button.isEnabled()
+    assert window._cleanup_options is None
+    assert "test file is in use" in warnings[0]
