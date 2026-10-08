@@ -1,0 +1,79 @@
+# Verification
+
+Checked on 2026-10-08 on Windows 11, Python 3.12.10, and an NVIDIA GeForce
+RTX 5060 Laptop GPU with 8151 MiB VRAM. Recognition used full Whisper large-v3,
+CUDA FP16, Hungarian, beam size 5, and minimum match confidence 0.45.
+
+## Automated checks
+
+- `pytest -q`: **26 passed**. Coverage includes Hungarian VPN forms, confidence
+  filtering, overlapping-window duplicates, rapid repeated mentions, bounded
+  audio history, overflow/reset invalidation, validated settings, shared UI and
+  overlay state, manual corrections, and rejection of stale queued results.
+- `ruff check .` and `ruff format --check .`: passed.
+- The real widgets were rendered and visually inspected. Preview images are
+  generated locally in `artifacts/` using `scripts/preview.py`.
+
+## GPU speech check
+
+Two synthetic Hungarian clips were generated locally with Piper 1.8.0 and
+`hu_HU-anna-medium`. The source text is in `tests/fixtures/`. No presenter audio
+was used. The benchmark follows the live six-second overlapping windows,
+two-second hop, and trailing word guard, then flushes the final partial window.
+
+| Clip | Duration | Expected | Counted | Processing | Slowest window |
+|---|---:|---:|---:|---:|---:|
+| Hungarian VPN mentions and suffixes | 18.03 s | 4 | 4 | 10.85 s | 1.48 s |
+| Hungarian network speech without VPN | 17.62 s | 0 | 0 | 10.85 s | 1.90 s |
+
+Processing excludes model loading and warmup. These clips establish that the
+installed pipeline works; they do not measure accuracy for human presenters,
+accents, background noise, or all VPN product names. Model confidence is not
+an accuracy percentage. Timing varies with other applications and GPU load.
+
+To reproduce the clips and reports, run from the repository root:
+
+```powershell
+uv tool run --from piper-tts==1.8.0 --python 3.12 python -m piper.download_voices hu_HU-anna-medium --data-dir .cache/voices
+uv tool run --from piper-tts==1.8.0 --python 3.12 piper -m hu_HU-anna-medium --data-dir .cache/voices --input-file tests/fixtures/hungarian-positive.txt -f .cache/positive.wav --sentence-silence 0.6
+uv tool run --from piper-tts==1.8.0 --python 3.12 piper -m hu_HU-anna-medium --data-dir .cache/voices --input-file tests/fixtures/hungarian-negative.txt -f .cache/negative.wav --sentence-silence 0.6
+.venv\Scripts\python.exe scripts/benchmark.py .cache/positive.wav --expected 4 --output artifacts/positive.json
+.venv\Scripts\python.exe scripts/benchmark.py .cache/negative.wav --expected 0 --output artifacts/negative.json
+```
+
+The public voice is downloaded on first use. Piper is a separate development
+tool; it is not included in the application or its dependencies.
+
+## Windows integration
+
+- The Realtek WASAPI microphone opened on the background recognition thread at
+  its native 48 kHz. Audio reached the memory buffer, pause stopped capture and
+  cleared the buffer, and resume captured new samples. No recording was saved.
+- Windows COM initialization on the audio thread is required for this device's
+  callback stream. This was checked against the actual hardware after adding
+  balanced initialization and cleanup.
+- The PyInstaller folder distribution launched a native control panel and
+  overlay. Windows window styles confirmed that the overlay was topmost,
+  transparent to clicks, and unable to activate itself.
+- A Windows `WM_HOTKEY` message exercised the registered native event handler,
+  incremented the count, and persisted the correct value on normal exit. The
+  original settings were restored after the check. Physical shortcut presses
+  during a slideshow still need rehearsal.
+- The packaged runtime diagnostic loaded large-v3 from the local cache and
+  completed CUDA inference and Silero VAD without a microphone. It discovered
+  its own bundled cuBLAS, cuDNN, and NVRTC libraries, and returned `ok: true`.
+- PyAV is constrained below version 17 because the initially resolved version
+  19 rejected an argument used by faster-whisper's audio decoder. Version
+  16.1.0 passed file decoding and packaged runtime checks.
+
+Local runtime, GUI, speech reports, generated audio, models, and build output
+are excluded from Git. The reproducible source and dependency lock are committed.
+
+## Rehearsal still needed
+
+Run the app with the actual presenters and microphone. Check a known-count
+passage, Hungarian suffixes, repeated VPN mentions, silence, and background
+speech. Use manual correction or adjust confidence if needed. Test overlay
+visibility and slide navigation in PowerPoint's full-screen slideshow on the
+presentation display. For remote presentations, share that entire display.
+Turbo/GPU and Small/CPU are available but were not benchmarked in this check.

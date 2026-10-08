@@ -1,0 +1,79 @@
+# Architecture
+
+One native desktop application, written in Python 3.12 with PySide6 widgets.
+The default model is large-v3 on CUDA in FP16, with language fixed to Hungarian
+and transcription enabled. Turbo/GPU and Small/CPU are selectable alternatives.
+
+## Data flow
+
+```mermaid
+flowchart LR
+    Microphone --> AudioBuffer
+    AudioBuffer --> SpeechWorker
+    SpeechWorker --> Matcher
+    Matcher --> Ledger
+    Ledger --> Counter
+    Counter --> ControlPanel
+    Counter --> Overlay
+```
+
+- `audio.py`: a thread-safe, bounded 30-second history addressed by absolute
+  sample positions. The microphone callback copies audio and updates the level
+  meter; recognition never runs inside the callback.
+- `engine.py`: a Qt background thread loads and warms the model, opens the selected
+  input, resamples to 16 kHz when necessary, and transcribes six-second windows
+  every two seconds. The first window becomes available after three seconds.
+  Silero VAD filters non-speech. A short trailing guard defers incomplete words
+  to the next overlapping window. Inference time adds to this buffering delay.
+- `matching.py`: accepts acronym variants and Hungarian word forms, maps them
+  back to word timestamps, filters low-confidence matches, and deduplicates
+  repeated observations one-to-one. Separate mentions in one result remain
+  separate even when spoken rapidly.
+- `ui.py`: owns the count and ledger on the GUI thread. Queued worker signals
+  update both windows. The recent transcript and detection history stay in memory.
+- `overlay.py`: a frameless topmost Qt window. Locked mode passes mouse events
+  through and does not accept keyboard focus. Unlocked mode permits dragging.
+- `native.py`: Windows global hotkeys, unregistered on shutdown. Conflicts are
+  reported to the control panel.
+- `runtime.py`: discovers NVIDIA wheel DLL directories and exposes them only to
+  the application process. System CUDA and global PATH are not modified. It also
+  initializes and balances Windows COM on the audio worker thread before opening
+  WASAPI. PortAudio documents this requirement in its
+  [WASAPI implementation](https://github.com/PortAudio/portaudio/blob/master/src/hostapi/wasapi/pa_win_wasapi.c).
+- `settings.py`: validates and atomically stores settings in local application
+  data. A corrupt settings file falls back to defaults.
+
+## Session boundaries
+
+Pausing stops the microphone stream and invalidates buffered results. Resuming
+clears previous audio and starts a new observation generation while keeping the
+count. Reset invalidates any inference already in flight, clears the ledger and
+history, and sets the count to zero. Manual corrections change the count without
+forgetting already observed speech. Ending a session releases the worker/model;
+pause/resume retains the loaded model for quick continuation.
+
+Shutdown requests the worker to stop and waits without blocking the GUI event
+loop. It never forcibly terminates a thread using the GPU. A model download or
+inference already in progress finishes before shutdown completes. A local lock
+prevents accidentally launching two copies against the same GPU and settings.
+
+## Reliability boundaries
+
+This is buffered speech transcription, not a phonetic keyword detector with a
+guaranteed trigger delay. Word timing may shift between overlapping windows.
+Deduplication uses interval overlap and a small timing tolerance; especially fast
+repetitions that the recognizer itself merges can still be missed. Confidence
+scores are heuristics. Microphone overflow and recognition backlog are reported,
+not silently hidden. If decode time regularly exceeds the two-second hop, use
+Turbo or improve available GPU capacity.
+
+The file benchmark uses the live window geometry and flushes its final partial
+window. It is useful for comparing model/threshold settings. Live microphone,
+accent, projector, and PowerPoint checks remain part of rehearsal.
+
+## Packaging
+
+The PyInstaller specification produces a folder distribution including the
+GPU libraries. Models are kept separately under the user's local application
+data. Pin dependencies with `uv.lock`; setup and build scripts do not need
+credentials or write to external repositories.

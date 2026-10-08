@@ -1,0 +1,1 @@
+A mai előadásban a számítógépes hálózatokról beszélünk. Az interneten sok különböző szolgáltatás működik. A végén összefoglaljuk a biztonsági kérdéseket. A titkosítás fontos része a kapcsolatnak. Ezután mindenki felteheti a kérdéseit.
