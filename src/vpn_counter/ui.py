@@ -642,6 +642,7 @@ class MainWindow(QMainWindow):
         self.start_button.setText("Preparing…")
         self.start_button.setEnabled(False)
         self.end_button.setEnabled(True)
+        self.busy.setRange(0, 0)
         self.busy.show()
         self.worker = SpeechWorker(
             EngineOptions(
@@ -651,13 +652,29 @@ class MainWindow(QMainWindow):
             ),
             self,
         )
-        self.worker.status.connect(self._set_status)
+        self.worker.status.connect(self._model_status)
+        self.worker.download_progress.connect(self._download_progress)
         self.worker.listening.connect(self._listening)
         self.worker.batch_ready.connect(self._batch)
         self.worker.failed.connect(self._failed)
         self.worker.warning.connect(self._notice)
         self.worker.finished.connect(self._finished)
         self.worker.start()
+
+    def _model_status(self, text: str) -> None:
+        if self.state == "stopping" or self._cleanup_options is not None:
+            return
+        if self.state == "loading":
+            self.busy.setRange(0, 0)
+        self._set_status(text)
+
+    def _download_progress(self, percent: int) -> None:
+        if self.state != "loading" or self._cleanup_options is not None:
+            return
+        percent = max(0, min(100, percent))
+        self.busy.setRange(0, 100)
+        self.busy.setValue(percent)
+        self._set_status(f"Downloading model · {percent}%")
 
     def _listening(self) -> None:
         if self.state == "stopping":
@@ -733,6 +750,7 @@ class MainWindow(QMainWindow):
         self._enable_setup(False)
         self.start_button.setEnabled(False)
         self.end_button.setEnabled(False)
+        self.busy.setRange(0, 0)
         self.busy.show()
         self._set_status("Removing selected app data…")
         self.cleanup_worker = CleanupWorker(self._cleanup_options, self)

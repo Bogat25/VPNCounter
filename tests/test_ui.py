@@ -142,6 +142,26 @@ def test_selecting_custom_position_unlocks_dragging(window):
     assert not window.overlay.locked
 
 
+def test_model_download_shows_percentage_then_returns_to_loading_indicator(window):
+    window.state = "loading"
+    window.busy.show()
+    window._download_progress(42)
+    assert window.busy.maximum() == 100
+    assert window.busy.value() == 42
+    assert window.status_label.text() == "Downloading model · 42%"
+    window._model_status("Loading speech model")
+    assert window.busy.maximum() == 0
+    assert window.status_label.text() == "Loading speech model"
+
+
+def test_late_model_progress_cannot_overwrite_shutdown_status(window):
+    window.state = "stopping"
+    window._set_status("Stopping after the current model operation…")
+    window._download_progress(80)
+    window._model_status("Loading speech model")
+    assert window.status_label.text().startswith("Stopping")
+
+
 def wait_for_cleanup(application, widget):
     deadline = time.monotonic() + 5
     while widget.cleanup_worker is not None and time.monotonic() < deadline:

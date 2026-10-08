@@ -101,15 +101,20 @@ def test_workflow_prepare_command_accepts_next_tag_from_old_source(release_root)
     assert release.validate_version("v0.1.2", release_root) == "0.1.2"
 
 
-def test_release_preserves_executable_gpu_files_and_checksum(release_root):
+@pytest.mark.parametrize("custom_folder", [False, True])
+def test_release_preserves_executable_gpu_files_and_checksum(release_root, custom_folder):
     release.prepare_version("v0.1.2", release_root)
-    distribution = release_root / "dist/VPNCounter"
+    distribution = release_root / (
+        "separate-build/VPNCounter" if custom_folder else "dist/VPNCounter"
+    )
     gpu = distribution / "_internal/nvidia/cudnn/bin"
     gpu.mkdir(parents=True)
     (distribution / "VPNCounter.exe").write_bytes(b"executable fixture")
     (gpu / "cudnn64_9.dll").write_bytes(b"GPU runtime fixture")
     output = release_root / "artifacts/releases"
-    archive = release.package_release("v0.1.2", output, release_root)
+    archive = release.package_release(
+        "v0.1.2", output, release_root, distribution=distribution if custom_folder else None
+    )
     assert archive.name == "VPNCounter-v0.1.2-windows-x64.zip"
     with zipfile.ZipFile(archive) as contents:
         assert contents.read("VPNCounter/VPNCounter.exe") == b"executable fixture"

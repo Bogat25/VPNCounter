@@ -723,10 +723,12 @@ source = { editable = "." }
 dependencies = [
     { name = "av" },
     { name = "faster-whisper" },
+    { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "pyside6" },
     { name = "scipy" },
     { name = "sounddevice" },
+    { name = "tqdm" },
 ]
 
 [package.optional-dependencies]
@@ -748,6 +750,7 @@ dev = [
 requires-dist = [
     { name = "av", specifier = ">=14,<17" },
     { name = "faster-whisper", specifier = ">=1.2.1,<2" },
+    { name = "huggingface-hub", specifier = ">=1,<2" },
     { name = "numpy", specifier = ">=2,<3" },
     { name = "nvidia-cublas-cu12", marker = "(sys_platform == 'linux' and extra == 'gpu') or (sys_platform == 'win32' and extra == 'gpu')", specifier = ">=12.8,<13" },
     { name = "nvidia-cudnn-cu12", marker = "(sys_platform == 'linux' and extra == 'gpu') or (sys_platform == 'win32' and extra == 'gpu')", specifier = ">=9.8,<10" },
@@ -755,6 +758,7 @@ requires-dist = [
     { name = "pyside6", specifier = ">=6.8,<7" },
     { name = "scipy", specifier = ">=1.14,<2" },
     { name = "sounddevice", specifier = ">=0.5,<0.6" },
+    { name = "tqdm", specifier = ">=4.66,<5" },
 ]
 provides-extras = ["gpu", "build"]
 

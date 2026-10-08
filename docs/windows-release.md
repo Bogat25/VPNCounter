@@ -6,7 +6,8 @@ Python does not need to be installed separately.
 
 Choose a microphone and your presentation display, then click Start listening.
 The default model is Whisper large-v3 on an NVIDIA GPU. The first session
-downloads the model; subsequent sessions work offline. An NVIDIA driver is
+downloads the model and shows its percentage, then loads and warms up recognition.
+Subsequent sessions work offline. An NVIDIA driver is
 required for GPU recognition. Select Small and CPU for the CPU alternative.
 
 The V icon appears in the Windows tray beside the clock, possibly under the

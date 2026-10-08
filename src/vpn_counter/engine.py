@@ -10,6 +10,7 @@ from PySide6.QtCore import QThread, Signal
 from scipy.signal import resample_poly
 
 from vpn_counter.audio import AudioBuffer
+from vpn_counter.downloads import download_model
 from vpn_counter.matching import RecognitionBatch, SpeechWord
 from vpn_counter.runtime import (
     audio_thread_context,
@@ -51,12 +52,13 @@ class EngineOptions:
     microphone_index: int | None = None
 
 
-def load_model(options: EngineOptions, notify=lambda _message: None):
+def load_model(
+    options: EngineOptions, notify=lambda _message: None, progress=lambda _percent: None
+):
     configure_model_storage()
     configure_gpu_libraries()
     import ctranslate2
     from faster_whisper import WhisperModel
-    from faster_whisper.utils import download_model
 
     if options.device == "cuda" and ctranslate2.get_cuda_device_count() == 0:
         raise RuntimeError("No CUDA GPU is available. Select CPU fallback or run setup again.")
@@ -65,18 +67,10 @@ def load_model(options: EngineOptions, notify=lambda _message: None):
     cached = all((model_directory / filename).is_file() for filename in required)
     if not cached:
         notify("Downloading model · first setup can take several minutes")
-    else:
-        notify("Loading speech model")
     model_path = (
-        str(model_directory)
-        if cached
-        else download_model(
-            options.model,
-            output_dir=str(model_directory),
-            cache_dir=str(data_directory() / "models/.cache/huggingface/hub"),
-            use_auth_token=False,
-        )
+        str(model_directory) if cached else download_model(options.model, model_directory, progress)
     )
+    notify("Loading speech model")
     model = WhisperModel(
         model_path,
         device=options.device,
@@ -105,7 +99,9 @@ def transcribe_window(model, samples: np.ndarray, offset: float = 0.0):
             "min_silence_duration_ms": 250,
             "speech_pad_ms": 200,
         },
-        hotwords="VPN, VPN-t, VPN-en, VPN-ek, VPN-es, VPN-kapcsolat, OpenVPN",
+        # Decode ordinary Hungarian speech without suggesting the target word.
+        # Keyword-only hotwords can turn unclear audio into false VPN mentions.
+        hallucination_silence_threshold=1.0,
     )
     words: list[SpeechWord] = []
     texts: list[str] = []
@@ -122,6 +118,7 @@ def transcribe_window(model, samples: np.ndarray, offset: float = 0.0):
 
 class SpeechWorker(QThread):
     status = Signal(str)
+    download_progress = Signal(int)
     listening = Signal()
     batch_ready = Signal(object)
     failed = Signal(str)
@@ -165,7 +162,7 @@ class SpeechWorker(QThread):
     def run(self) -> None:
         try:
             self.status.emit("Preparing recognition")
-            model = load_model(self.options, self.status.emit)
+            model = load_model(self.options, self.status.emit, self.download_progress.emit)
             if self._stop.is_set():
                 return
             with audio_thread_context():

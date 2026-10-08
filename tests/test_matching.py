@@ -39,6 +39,28 @@ def test_low_confidence_is_rejected():
     assert not find_mentions((SpeechWord("VPN", 1, 2, 0.2),), confidence=0.45)
 
 
+def test_uncertain_letter_cannot_be_hidden_by_confident_surrounding_letters():
+    words = (
+        SpeechWord("vé", 1, 1.2, 0.99),
+        SpeechWord("pé", 1.2, 1.4, 0.1),
+        SpeechWord("en", 1.4, 1.6, 0.99),
+    )
+    assert not find_mentions(words, confidence=0.45)
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        SpeechWord("VPN", 0, 0, 0.99),
+        SpeechWord("VPN", 2, 1, 0.99),
+        SpeechWord("VPN", 1, 2, float("nan")),
+        SpeechWord("VPN", float("nan"), 2, 0.99),
+    ],
+)
+def test_invalid_recognition_timing_and_confidence_cannot_increment_counter(word):
+    assert not find_mentions((word,))
+
+
 def test_overlapping_windows_count_each_observation_once():
     ledger = MentionLedger()
     first = Mention("VPN-t", 1, 1.6, 0.9)

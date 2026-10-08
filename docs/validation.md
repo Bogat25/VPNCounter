@@ -1,24 +1,29 @@
 # Verification
 
 Checked on 2026-10-08 on Windows 11, Python 3.12.10, and an NVIDIA GeForce
-RTX 5060 Laptop GPU with 8151 MiB VRAM. Recognition used full Whisper large-v3,
-CUDA FP16, Hungarian, beam size 5, and minimum match confidence 0.45.
+RTX 5060 Laptop GPU with 8151 MiB VRAM. Current source and packaged UI checks
+are for version 0.1.2. The initial hardware checks below used full Whisper
+large-v3, CUDA FP16, Hungarian, beam size 5, and minimum match confidence 0.45;
+they predate the removal of the VPN keyword hint.
 
 ## Automated checks
 
-- `pytest -q`: **56 passed**. Coverage includes Hungarian VPN forms, confidence
+- `pytest -q`: **83 passed**. Coverage includes Hungarian VPN forms, confidence
   filtering, overlapping-window duplicates, rapid repeated mentions, bounded
   audio history, overflow/reset invalidation, validated settings, shared UI and
   overlay state, manual corrections, rejection of stale queued results, tray
   restoration and explicit exit, four corner anchors, settings migration, and
   versioned release packaging, cleanup selection and cancellation, worker stop
   ordering, preservation of settings, cleanup error recovery, safe handling of
-  Windows junctions, and process-local download cache locations.
+  Windows junctions, and process-local download cache locations. New cases cover
+  neutral decoding, invalid word timings, weak letters in spelled acronyms,
+  tag-derived versions, byte percentages, cached files, transfer retries, Xet
+  network/reconstruction updates, and late progress during shutdown.
 - `ruff check .` and `ruff format --check .`: passed.
 - The real widgets were rendered and visually inspected. Preview images are
   generated locally in `artifacts/` using `scripts/preview.py`.
 
-## GPU speech check
+## Initial GPU speech check
 
 Two synthetic Hungarian clips were generated locally with Piper 1.8.0 and
 `hu_HU-anna-medium`. The source text is in `tests/fixtures/`. No presenter audio
@@ -31,7 +36,8 @@ two-second hop, and trailing word guard, then flushes the final partial window.
 | Hungarian network speech without VPN | 17.62 s | 0 | 0 | 10.85 s | 1.90 s |
 
 Processing excludes model loading and warmup. These clips establish that the
-installed pipeline works; they do not measure accuracy for human presenters,
+initial installed pipeline worked; they do not validate the current recognition
+change or measure accuracy for human presenters,
 accents, background noise, or all VPN product names. Model confidence is not
 an accuracy percentage. Timing varies with other applications and GPU load.
 
@@ -47,6 +53,31 @@ uv tool run --from piper-tts==1.8.0 --python 3.12 piper -m hu_HU-anna-medium --d
 
 The public voice is downloaded on first use. Piper is a separate development
 tool; it is not included in the application or its dependencies.
+
+## Recognition and download update
+
+- Removed the VPN-only decoding hint, enabled silence-hallucination suppression,
+  rejected non-finite/zero-duration word data, and made confidence filtering use
+  the weakest recognized word in a spelled acronym. Unit regressions include
+  ordinary Hungarian speech, an uncertain hallucinated segment, and weak letters.
+- Added `hungarian-everyday-negative.txt` with everyday phrases including
+  `végén`, `gépen`, and `szépen`. The synthetic clip was generated locally, but
+  current GPU recognition checks could not complete: the full large-v3 weights
+  are absent and both download attempts stalled. The initial GPU results above
+  remain a historical baseline. Current false-positive rates still need a
+  known-count passage with the real presenters and microphone.
+- A real public tokenizer download through the installed Hub client produced
+  byte progress through 0%, 99%, and 100%. Automated cases cover cached files,
+  initial/resumed byte counts, retries, failed downloads without false 100%,
+  and Xet's separate network/reconstruction reports without double counting.
+- The rebuilt 0.1.2 executable passed its frozen smoke check with
+  `download_progress_ok: true` and `storage_dialog_ok: true`, without opening
+  the microphone or loading a model. The 42% state was rendered and inspected
+  in `artifacts/model-download.png`.
+- Local packaging produced a refreshed 0.1.2 portable ZIP. Its CRC, SHA-256,
+  version manifest, bundled speech/GPU dependencies, and executable match were
+  verified. The default `dist` copy was left running; the updated executable
+  is in `artifacts/builds/v0.1.2/VPNCounter/`.
 
 ## Windows integration
 
@@ -87,14 +118,18 @@ are excluded from Git. The reproducible source and dependency lock are committed
   both windows and importing the frozen speech dependencies without loading a
   model or capturing audio.
 - Actionlint 1.7.12 accepted `.github/workflows/release.yml`. The dependency
-  lock is current. The local version validator accepted `v0.1.0`; automated
-  tests rejected malformed tags and mismatched source versions.
+  lock is current. The workflow prepares the app version from a stable release
+  tag before dependency installation. Tests verify that preparation updates
+  only app version entries, preserves dependency pins, rejects malformed tags
+  and metadata, and supports a tag newer than the source's recorded version.
+  The local `v0.1.2` preparation passed locked dependency installation.
 - Local packaging produced a ZIP of about 1.44 GiB containing
   500 files. The executable, cuBLAS, cuDNN, VAD assets, launch instructions, and
   version manifest were present. Every ZIP CRC and the SHA-256 checksum passed.
 - The GitHub-hosted build and publication were not run. No tags, commits, or
-  releases were published remotely. A matching version tag must be published by
-  the user to exercise the hosted workflow.
+  releases were published remotely. A new version tag on the fixed commit must
+  be published by the user to exercise the hosted workflow; rerunning an older
+  failed tag continues to use that tag's old workflow.
 
 ## Portable cleanup
 

@@ -102,9 +102,11 @@ def prepare_version(tag: str, root: Path = ROOT) -> str:
     return validate_version(tag, root)
 
 
-def package_release(tag: str, output: Path, root: Path = ROOT) -> Path:
+def package_release(
+    tag: str, output: Path, root: Path = ROOT, *, distribution: Path | None = None
+) -> Path:
     version = validate_version(tag, root)
-    distribution = root / "dist/VPNCounter"
+    distribution = distribution or root / "dist/VPNCounter"
     if not (distribution / "VPNCounter.exe").is_file():
         raise FileNotFoundError("Build dist/VPNCounter/VPNCounter.exe before packaging a release")
     output.mkdir(parents=True, exist_ok=True)
@@ -132,6 +134,9 @@ def main() -> int:
         "--prepare", action="store_true", help="Apply the tag version before building"
     )
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/releases")
+    parser.add_argument(
+        "--distribution", type=Path, help="Use an application folder from a custom build"
+    )
     arguments = parser.parse_args()
     try:
         if arguments.prepare:
@@ -141,7 +146,11 @@ def main() -> int:
         if arguments.verify_only:
             print(f"Verified release version {version}")
         else:
-            print(package_release(arguments.tag, arguments.output))
+            print(
+                package_release(
+                    arguments.tag, arguments.output, distribution=arguments.distribution
+                )
+            )
         return 0
     except (ValueError, OSError) as error:
         parser.exit(1, f"Release packaging failed: {error}\n")

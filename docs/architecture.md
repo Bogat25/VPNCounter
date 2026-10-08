@@ -23,14 +23,23 @@ flowchart LR
 - `engine.py`: a Qt background thread loads and warms the model, opens the selected
   input, resamples to 16 kHz when necessary, and transcribes six-second windows
   every two seconds. The first window becomes available after three seconds.
-  Silero VAD filters non-speech. A short trailing guard defers incomplete words
-  to the next overlapping window. Inference time adds to this buffering delay.
+  Silero VAD and silence-hallucination suppression filter non-speech. Decoding
+  has no VPN-only hotwords or initial prompt: such a hint can bias unrelated
+  or unclear speech toward the target. A short trailing guard defers incomplete
+  words to the next overlapping window. Inference time adds to this buffering delay.
 - `matching.py`: accepts acronym variants and Hungarian word forms, maps them
-  back to word timestamps, filters low-confidence matches, and deduplicates
-  repeated observations one-to-one. Separate mentions in one result remain
+  back to word timestamps, rejects invalid timings and confidence values, and
+  requires every word in a spelled acronym to meet the confidence threshold.
+  It deduplicates repeated observations one-to-one. Separate mentions in one result remain
   separate even when spoken rapidly.
 - `ui.py`: owns the count and ledger on the GUI thread. Queued worker signals
   update both windows. The recent transcript and detection history stay in memory.
+- `downloads.py`: fetches public model metadata and pins file downloads to that
+  revision. A custom progress callback totals model-file bytes, including cached
+  files, and signals integer percentages to the UI. Xet network transfer bytes
+  are excluded from that total because compression and deduplication can make
+  them differ from file sizes. Completion is emitted only after all files return
+  successfully. Cached models load offline without a metadata request.
 - `overlay.py`: a frameless topmost Qt window. Locked mode passes mouse events
   through and does not accept keyboard focus. Unlocked mode permits dragging.
   The UI anchors it to any display corner with a 24-pixel logical margin, or

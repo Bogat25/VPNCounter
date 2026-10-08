@@ -65,6 +65,10 @@ def smoke_test(output: Path) -> int:
         window = MainWindow(Settings(), save_settings=False, enable_tray=False)
         window.show()
         application.processEvents()
+        window.state = "loading"
+        window._download_progress(42)
+        progress_ok = window.busy.maximum() == 100 and window.busy.value() == 42
+        window.state = "idle"
         storage_dialog = StorageDialog(window)
         storage_dialog.show()
         application.processEvents()
@@ -74,8 +78,14 @@ def smoke_test(output: Path) -> int:
             and not storage_dialog.settings.isChecked()
         )
         report.update(
-            ok=not window.grab().isNull() and not window.overlay.grab().isNull() and storage_ok,
+            ok=(
+                not window.grab().isNull()
+                and not window.overlay.grab().isNull()
+                and storage_ok
+                and progress_ok
+            ),
             storage_dialog_ok=storage_ok,
+            download_progress_ok=progress_ok,
             version=__version__,
             qt_version=qVersion(),
             av_version=av.__version__,

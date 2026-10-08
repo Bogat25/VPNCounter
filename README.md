@@ -29,7 +29,9 @@ control panel or clicking **Hide to tray** keeps the counter running. Use
 **Exit VPN Counter** from the tray menu to stop the application.
 
 The first session downloads the public model to
-`%LOCALAPPDATA%\VPNCounter\models\large-v3`. Once cached, recognition works offline.
+`%LOCALAPPDATA%\VPNCounter\models\large-v3`. The control panel shows a download
+percentage, followed by separate loading and warmup messages. Once cached,
+recognition works offline.
 No API key is needed. Audio is kept in a bounded memory buffer; it is not saved
 or uploaded. Settings and the last counter value are stored locally.
 
@@ -69,8 +71,11 @@ windows are matched by timestamps so repeated observations do not add duplicates
 Words such as `titkosítás` and `magánhálózat` alone do not increment the counter.
 
 Word confidence is a model score, not a calibrated accuracy guarantee. Raising
-the minimum match confidence rejects more uncertain detections. Real microphone
-quality and pronunciation affect results: rehearse with the actual presenters
+the minimum match confidence rejects more uncertain detections. Every recognized
+word in a spelled acronym must meet that threshold. Recognition uses ordinary Hungarian
+transcription without a VPN keyword hint, which could bias unclear speech toward
+the target word. Microphone quality and pronunciation affect results: rehearse
+with the actual presenters
 and presentation microphone before the event.
 
 ## Presentation controls
@@ -93,6 +98,9 @@ the PowerPoint window may omit the separate overlay. Test full-screen slideshow
 visibility and slide controls on the actual presentation setup.
 
 ## Windows executable
+
+Exit any running copy from the tray before rebuilding its folder. The build
+script checks this before replacing files.
 
 ```powershell
 .\scripts\build.ps1

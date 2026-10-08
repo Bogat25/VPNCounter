@@ -74,3 +74,6 @@ local and sets `ok` to `true` on success. These commands build local files; they
 do not create tags, contact the GitHub release API, or publish anything.
 The preparation command changes the three local app version entries. Packaging
 still checks that they all match the requested tag, so prepare before building.
+Exit any running copy of `dist/VPNCounter/VPNCounter.exe` before rebuilding;
+`build.ps1` checks this before replacing files. For a PyInstaller build in another
+location, pass `--distribution <path-to-VPNCounter-folder>` to `release.py`.

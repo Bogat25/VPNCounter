@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -67,7 +68,15 @@ def find_mentions(words: tuple[SpeechWord, ...], confidence: float = 0.45) -> li
         ]
         if not matched:
             continue
-        probability = sum(word.probability for word in matched) / len(matched)
+        if any(
+            not all(math.isfinite(value) for value in (word.start, word.end, word.probability))
+            or word.end <= word.start
+            for word in matched
+        ):
+            continue
+        # Every letter of a spelled acronym must be credible. Averaging lets
+        # two confident letters hide a third that was barely recognized.
+        probability = min(word.probability for word in matched)
         if probability < confidence:
             continue
         mentions.append(Mention(match.group(), matched[0].start, matched[-1].end, probability))
