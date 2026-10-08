@@ -1,6 +1,6 @@
 # Tag-based Windows releases
 
-`.github/workflows/release.yml` runs when a version tag such as `v0.1.0` is
+`.github/workflows/release.yml` runs when a version tag such as `v0.1.1` is
 published to GitHub. Normal branch commits do not publish a release. The tagged
 commit must contain the workflow. This uses GitHub's
 [tag push trigger](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push).
@@ -8,15 +8,24 @@ commit must contain the workflow. This uses GitHub's
 ## Prepare a version
 
 1. Set the same version in `pyproject.toml` and
-   `src/vpn_counter/__init__.py`, for example `0.1.0`.
+   `src/vpn_counter/__init__.py`, for example `0.1.1`.
 2. Run `uv lock`, check the app, and commit the version locally on `main`.
-3. Tag that commit, for example `git tag -a v0.1.0 -m "VPN Counter v0.1.0"`.
-4. Publish the committed source and that tag to GitHub using your Git client
+3. Check the version before creating the tag:
+   `.venv\Scripts\python.exe scripts/release.py --tag v0.1.1 --verify-only`.
+4. Tag that commit, for example `git tag -a v0.1.1 -m "VPN Counter v0.1.1"`.
+5. Publish the committed source and that tag to GitHub using your Git client
    when you want the release to run. Creating a local tag alone does not run it.
 
 Only stable `vMAJOR.MINOR.PATCH` tags are accepted. Invalid tags or a mismatch
 with either source version fail before the application build. Keep the version
 in `uv.lock` current after changing `pyproject.toml`.
+
+If the version check fails, the source at the tag has a different version from
+the tag name. A branch update does not change an existing tag, and rerunning
+that failed workflow still checks out the same tagged commit. After committing
+the matching version files, use your Git client to recreate the failed tag at
+the fixed commit and publish it. For a version that was already successfully
+released, prepare a new version and tag instead.
 
 ## What the workflow does
 
@@ -29,7 +38,7 @@ covered by a separate check on the presentation computer.
 
 `scripts/release.py` creates these files:
 
-- `VPNCounter-v0.1.0-windows-x64.zip`, with the full application folder, GPU
+- `VPNCounter-v0.1.1-windows-x64.zip`, with the full application folder, GPU
   runtime libraries, Windows launch instructions, and `VERSION.txt`.
 - `SHA256SUMS.txt`, with the archive's SHA-256 checksum.
 
@@ -55,7 +64,7 @@ again fails. Use a new version tag for a new release.
 .\scripts\build.ps1
 $appProcess = Start-Process -FilePath '.\dist\VPNCounter\VPNCounter.exe' -ArgumentList @('--smoke-test', 'artifacts/packaged-smoke.json') -PassThru -WindowStyle Hidden
 $appProcess.WaitForExit()
-.venv\Scripts\python.exe scripts/release.py --tag v0.1.0
+.venv\Scripts\python.exe scripts/release.py --tag v0.1.1
 ```
 
 The ZIP and checksum are saved under `artifacts/releases/`. The smoke report is
