@@ -22,6 +22,7 @@ class Settings:
     overlay_color: str = "#a78bfa"
     overlay_x: int = 24
     overlay_y: int = 24
+    overlay_corner: str = "top-left"
     overlay_background: bool = True
     confidence: float = 0.45
     last_count: int = 0
@@ -49,6 +50,16 @@ class Settings:
             values["overlay_opacity"] = max(30, min(100, values.get("overlay_opacity", 92)))
             values["confidence"] = max(0.0, min(1.0, values.get("confidence", 0.45)))
             values["last_count"] = max(0, values.get("last_count", 0))
+            corner = values.get("overlay_corner", "top-left")
+            if "overlay_corner" not in raw and (
+                values.get("overlay_x", 24) != 24 or values.get("overlay_y", 24) != 24
+            ):
+                corner = "custom"
+            values["overlay_corner"] = (
+                corner
+                if corner in {"top-left", "top-right", "bottom-left", "bottom-right", "custom"}
+                else "top-left"
+            )
             color = values.get("overlay_color", "#a78bfa")
             if len(color) != 7 or not color.startswith("#"):
                 values["overlay_color"] = "#a78bfa"

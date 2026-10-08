@@ -17,12 +17,14 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QSlider,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -122,7 +124,13 @@ def card(name: str = "card") -> tuple[QFrame, QVBoxLayout]:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings: Settings | None = None, *, save_settings: bool = True) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        *,
+        save_settings: bool = True,
+        enable_tray: bool = True,
+    ) -> None:
         super().__init__()
         self.settings = settings or Settings.load()
         self._save_enabled = save_settings
@@ -131,6 +139,8 @@ class MainWindow(QMainWindow):
         self.worker: SpeechWorker | None = None
         self.state = "idle"
         self._pending_close = False
+        self._quit_requested = False
+        self._tray_available = enable_tray and QSystemTrayIcon.isSystemTrayAvailable()
         self._elapsed = 0.0
         self._active_since: float | None = None
         self.overlay = CounterOverlay(self.settings)
@@ -147,6 +157,7 @@ class MainWindow(QMainWindow):
         self._place_overlay()
         self.overlay.configure(self.settings)
         self.overlay.show()
+        self._setup_tray()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(80)
@@ -164,6 +175,57 @@ class MainWindow(QMainWindow):
             self._notice("Some global shortcuts are in use by another application.")
         QApplication.instance().screenAdded.connect(lambda _screen: self._screens_changed())
         QApplication.instance().screenRemoved.connect(lambda _screen: self._screens_changed())
+
+    def _setup_tray(self) -> None:
+        self.tray = QSystemTrayIcon(self.windowIcon(), self)
+        self.tray_menu = QMenu(self)
+        self.tray_open = self.tray_menu.addAction("Open VPN Counter", self.open_control_panel)
+        self.tray_menu.setDefaultAction(self.tray_open)
+        self.tray_listen = self.tray_menu.addAction("Start listening", self.toggle_listening)
+        self.tray_overlay = self.tray_menu.addAction("Show overlay")
+        self.tray_overlay.setCheckable(True)
+        self.tray_overlay.setChecked(self.show_overlay.isChecked())
+        self.tray_overlay.toggled.connect(self.show_overlay.setChecked)
+        self.show_overlay.toggled.connect(self.tray_overlay.setChecked)
+        self.tray_menu.addSeparator()
+        self.tray_quit = self.tray_menu.addAction("Exit VPN Counter", self.quit_application)
+        self.tray_menu.aboutToShow.connect(self._update_tray)
+        self.tray.setContextMenu(self.tray_menu)
+        self.tray.activated.connect(self._tray_activated)
+        self.tray.messageClicked.connect(self.open_control_panel)
+        self.hide_button.setVisible(self._tray_available)
+        if self._tray_available:
+            QApplication.instance().setQuitOnLastWindowClosed(False)
+            self.tray.show()
+        self._update_tray()
+
+    def _update_tray(self) -> None:
+        if not hasattr(self, "tray"):
+            return
+        self.tray.setToolTip(f"VPN Counter · {self.count} mentions · {self.status_label.text()}")
+        self.tray_listen.setText(self.start_button.text())
+        self.tray_listen.setEnabled(self.start_button.isEnabled() and not self._quit_requested)
+
+    def _tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self.open_control_panel()
+
+    def open_control_panel(self) -> None:
+        if not self._quit_requested:
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+
+    def hide_to_tray(self) -> None:
+        if self._tray_available:
+            self.hide()
+
+    def quit_application(self) -> None:
+        self._quit_requested = True
+        self.close()
 
     def _build(self) -> None:
         scroll = QScrollArea()
@@ -188,6 +250,11 @@ class MainWindow(QMainWindow):
         header.addLayout(titles)
         header.addStretch()
         header.addWidget(label("LOCAL  /  HUNGARIAN", "badge"))
+        self.hide_button = QPushButton("Hide to tray")
+        self.hide_button.setObjectName("quiet")
+        self.hide_button.setToolTip("Keep the counter running. Reopen it from the Windows tray.")
+        self.hide_button.clicked.connect(self.hide_to_tray)
+        header.addWidget(self.hide_button)
         help_button = QPushButton("Shortcuts")
         help_button.setObjectName("quiet")
         help_button.clicked.connect(self._help)
@@ -321,24 +388,46 @@ class MainWindow(QMainWindow):
         display_grid = QGridLayout()
         display_grid.setHorizontalSpacing(18)
         display_grid.addWidget(label("DISPLAY", "eyebrow"), 0, 0)
-        display_grid.addWidget(label("SIZE", "eyebrow"), 0, 1)
-        display_grid.addWidget(label("OPACITY", "eyebrow"), 0, 2)
+        display_grid.addWidget(label("POSITION", "eyebrow"), 0, 1)
+        display_grid.addWidget(label("SIZE", "eyebrow"), 0, 2)
+        display_grid.addWidget(label("OPACITY", "eyebrow"), 0, 3)
         self.screen_combo = QComboBox()
+        self.screen_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.screen_combo.setMinimumContentsLength(15)
         self.screen_combo.currentIndexChanged.connect(self._screen_selected)
         display_grid.addWidget(self.screen_combo, 1, 0)
+        self.position_combo = QComboBox()
+        self.position_combo.setObjectName("overlayPosition")
+        for text, corner in (
+            ("Top left", "top-left"),
+            ("Top right", "top-right"),
+            ("Bottom left", "bottom-left"),
+            ("Bottom right", "bottom-right"),
+            ("Custom (drag)", "custom"),
+        ):
+            self.position_combo.addItem(text, corner)
+        self.position_combo.setCurrentIndex(
+            max(0, self.position_combo.findData(self.settings.overlay_corner))
+        )
+        self.position_combo.currentIndexChanged.connect(self._position_selected)
+        self.position_combo.setToolTip("Anchor the counter to a corner of the selected display.")
+        display_grid.addWidget(self.position_combo, 1, 1)
         self.size_slider = QSlider(Qt.Orientation.Horizontal)
         self.size_slider.setRange(20, 80)
         self.size_slider.setValue(self.settings.overlay_size)
         self.size_slider.valueChanged.connect(self._overlay_style_changed)
-        display_grid.addWidget(self.size_slider, 1, 1)
+        display_grid.addWidget(self.size_slider, 1, 2)
         self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self.opacity_slider.setRange(30, 100)
         self.opacity_slider.setValue(self.settings.overlay_opacity)
         self.opacity_slider.valueChanged.connect(self._overlay_style_changed)
-        display_grid.addWidget(self.opacity_slider, 1, 2)
+        display_grid.addWidget(self.opacity_slider, 1, 3)
         display_grid.setColumnStretch(0, 2)
-        display_grid.setColumnStretch(1, 1)
+        display_grid.setColumnStretch(1, 2)
         display_grid.setColumnStretch(2, 1)
+        display_grid.setColumnStretch(3, 1)
         display_layout.addLayout(display_grid)
         display_options = QHBoxLayout()
         self.lock_overlay = QCheckBox("Lock position · clicks pass through")
@@ -359,10 +448,6 @@ class MainWindow(QMainWindow):
             swatch.setToolTip(f"Overlay color {color}")
             swatch.clicked.connect(lambda _checked=False, selected=color: self._set_color(selected))
             display_options.addWidget(swatch)
-        top_left = QPushButton("Top-left")
-        top_left.setObjectName("quiet")
-        top_left.clicked.connect(self._reset_overlay_position)
-        display_options.addWidget(top_left)
         display_layout.addLayout(display_options)
         layout.addWidget(display)
 
@@ -384,7 +469,12 @@ class MainWindow(QMainWindow):
         activity_layout.addWidget(self.activity)
         layout.addWidget(activity)
         self.notice_label = label(
-            "Ctrl+Alt+P pause/resume    ·    Ctrl+Alt+↑ / ↓ correct    ·    Ctrl+Alt+O overlay",
+            "Ctrl+Alt+P pause/resume    ·    Ctrl+Alt+↑ / ↓ correct    ·    Ctrl+Alt+O overlay"
+            + (
+                "\nClosing this window hides it to the tray. Use the tray menu to exit."
+                if self._tray_available
+                else ""
+            ),
             "muted",
             True,
         )
@@ -437,19 +527,43 @@ class MainWindow(QMainWindow):
         if screen is None:
             return
         geometry = screen.geometry()
-        x = max(0, min(self.settings.overlay_x, geometry.width() - self.overlay.width()))
-        y = max(0, min(self.settings.overlay_y, geometry.height() - self.overlay.height()))
+        max_x = max(0, geometry.width() - self.overlay.width())
+        max_y = max(0, geometry.height() - self.overlay.height())
+        if self.settings.overlay_corner == "custom":
+            x = max(0, min(self.settings.overlay_x, max_x))
+            y = max(0, min(self.settings.overlay_y, max_y))
+        else:
+            x = (
+                max(0, max_x - 24)
+                if self.settings.overlay_corner.endswith("right")
+                else min(24, max_x)
+            )
+            y = (
+                max(0, max_y - 24)
+                if self.settings.overlay_corner.startswith("bottom")
+                else min(24, max_y)
+            )
+        self.settings = replace(self.settings, overlay_x=x, overlay_y=y)
         self.overlay.move(geometry.x() + x, geometry.y() + y)
 
     def _overlay_moved(self, x: int, y: int) -> None:
         screen = self._selected_screen()
         geometry = screen.geometry()
         self.settings = replace(
-            self.settings, overlay_x=x - geometry.x(), overlay_y=y - geometry.y()
+            self.settings,
+            overlay_x=x - geometry.x(),
+            overlay_y=y - geometry.y(),
+            overlay_corner="custom",
         )
+        self.position_combo.blockSignals(True)
+        self.position_combo.setCurrentIndex(self.position_combo.findData("custom"))
+        self.position_combo.blockSignals(False)
+        self._place_overlay()
 
-    def _reset_overlay_position(self) -> None:
-        self.settings = replace(self.settings, overlay_x=24, overlay_y=24)
+    def _position_selected(self, _index: int) -> None:
+        self.settings = replace(self.settings, overlay_corner=self.position_combo.currentData())
+        if self.settings.overlay_corner == "custom":
+            self.lock_overlay.setChecked(False)
         self._place_overlay()
 
     def _overlay_style_changed(self, _value=None) -> None:
@@ -475,6 +589,7 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
+        self._update_tray()
 
     def _enable_setup(self, enabled: bool) -> None:
         for widget in (
@@ -605,6 +720,8 @@ class MainWindow(QMainWindow):
         self.count = max(0, self.count + amount)
         self.counter_label.setText(str(self.count))
         self.overlay.set_count(self.count, animate=amount > 0)
+        self._place_overlay()
+        self._update_tray()
 
     def reset_count(self) -> None:
         if self.worker:
@@ -613,6 +730,8 @@ class MainWindow(QMainWindow):
         self.count = 0
         self.counter_label.setText("0")
         self.overlay.set_count(0)
+        self._place_overlay()
+        self._update_tray()
         self.activity.clear()
         self.transcript_label.setText("Counter reset. Ready for the next mention.")
         self._elapsed = 0
@@ -640,10 +759,17 @@ class MainWindow(QMainWindow):
             "Choose your presentation display. Unlock the overlay to drag it, "
             "then lock it before starting PowerPoint.\n\n"
             "For remote presentations, share the whole presentation display "
-            "so the overlay is included.",
+            "so the overlay is included.\n\n"
+            "Use Presentation overlay → Position to choose any of the four corners.\n"
+            "Click the Windows tray icon to reopen the panel. Right-click it and "
+            "choose Exit VPN Counter to stop the app.",
         )
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._tray_available and not self._quit_requested:
+            self.hide_to_tray()
+            event.ignore()
+            return
         if self.worker is not None and self.worker.isRunning():
             self._pending_close = True
             self.end_session()
@@ -652,6 +778,7 @@ class MainWindow(QMainWindow):
             return
         self._timer.stop()
         self._hotkeys.close()
+        self.tray.hide()
         self.overlay.close()
         self.settings = replace(
             self.settings,
@@ -668,3 +795,5 @@ class MainWindow(QMainWindow):
             except OSError:
                 pass  # Closing remains safe if the settings location is read-only.
         event.accept()
+        if self._quit_requested:
+            QApplication.instance().quit()

@@ -17,7 +17,7 @@ for filename in ("segoeui.ttf", "segoeuib.ttf"):
     if font_path.is_file():
         QFontDatabase.addApplicationFont(str(font_path))
 application.setStyle("Fusion")
-window = MainWindow(Settings(), save_settings=False)
+window = MainWindow(Settings(), save_settings=False, enable_tray=False)
 window.resize(1100, 1050)
 window.show()
 application.processEvents()

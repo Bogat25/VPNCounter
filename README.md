@@ -16,8 +16,17 @@ Double-click **`Start VPN Counter.cmd`**, or run:
 
 Choose a microphone and the presentation display, then click **Start listening**.
 Unlock the overlay to drag it into place; lock it before starting the slideshow.
+Under **Presentation overlay → Position**, choose **Top left**, **Top right**,
+**Bottom left**, or **Bottom right**. Corners stay anchored as the count and
+overlay size change. **Custom (drag)** unlocks manual positioning.
 The microphone is opened only after the model is ready and you start a session.
 Pause stops the microphone stream. Ending a session keeps the displayed count.
+
+The **V icon in the Windows tray** (beside the clock, possibly inside the `^`
+hidden-icons menu) reopens the control panel with a click. Right-click it for
+listening controls, overlay visibility, or **Exit VPN Counter**. Closing the
+control panel or clicking **Hide to tray** keeps the counter running. Use
+**Exit VPN Counter** from the tray menu to stop the application.
 
 The first session downloads the public model to
 `%LOCALAPPDATA%\VPNCounter\models\large-v3`. Once cached, recognition works offline.
@@ -88,6 +97,10 @@ first use on another machine. The executable does not require a separate Python
 installation on the destination computer.
 
 ## Development and checks
+
+Automatic Windows downloads for version tags are configured in
+[.github/workflows/release.yml](.github/workflows/release.yml).
+See [docs/releases.md](docs/releases.md) for versioning and release instructions.
 
 ```powershell
 uv sync --extra gpu

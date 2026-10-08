@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $projectRoot
 try {
-    & uv sync --extra gpu --extra build
+    & uv sync --locked --extra gpu --extra build
     if ($LASTEXITCODE -ne 0) { throw 'Build dependency installation failed.' }
     & .venv\Scripts\python.exe -m PyInstaller --noconfirm VPNCounter.spec
     if ($LASTEXITCODE -ne 0) { throw 'Packaging failed.' }

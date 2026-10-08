@@ -1,0 +1,83 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Test, package, and release Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      QT_QPA_PLATFORM: offscreen
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.11.17'
+          python-version: '3.12.10'
+          enable-cache: false
+
+      - name: Verify the tag matches the application version
+        run: uv run --no-project --python 3.12.10 python scripts/release.py --tag "$env:RELEASE_TAG" --verify-only
+
+      - name: Install locked application, GPU, and build dependencies
+        run: uv sync --locked --python 3.12.10 --extra gpu --extra build
+
+      - name: Check code style
+        run: |
+          & .venv/Scripts/ruff.exe check .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .venv/Scripts/ruff.exe format --check .
+
+      - name: Run tests
+        run: .venv/Scripts/python.exe -m pytest -q
+
+      - name: Build the Windows application with GPU libraries
+        run: .venv/Scripts/python.exe -m PyInstaller --noconfirm VPNCounter.spec
+
+      - name: Check the packaged application without a microphone or GPU
+        run: |
+          $appProcess = Start-Process -FilePath './dist/VPNCounter/VPNCounter.exe' -ArgumentList @('--smoke-test', 'artifacts/packaged-smoke.json') -PassThru -WindowStyle Hidden
+          if (-not $appProcess.WaitForExit(60000)) { throw 'Packaged application smoke check timed out.' }
+          if ($appProcess.ExitCode -ne 0) { throw 'Packaged application failed its smoke check.' }
+          $report = Get-Content -LiteralPath 'artifacts/packaged-smoke.json' -Raw | ConvertFrom-Json
+          if (-not $report.ok) { throw 'Packaged application reported a failed smoke check.' }
+
+      - name: Create versioned ZIP and SHA-256 checksum
+        run: .venv/Scripts/python.exe scripts/release.py --tag "$env:RELEASE_TAG"
+
+      - name: Verify the archive and publish the tagged release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $archives = @(Get-ChildItem -LiteralPath 'artifacts/releases' -Filter '*.zip' -File)
+          if ($archives.Count -ne 1) { throw 'Expected one Windows release archive.' }
+          $checksumPath = Join-Path (Get-Location) 'artifacts/releases/SHA256SUMS.txt'
+          $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
+          if ((Get-FileHash -LiteralPath $archives[0].FullName -Algorithm SHA256).Hash -ne $expectedHash) {
+            throw 'Release archive checksum mismatch.'
+          }
+          gh release create "$env:RELEASE_TAG" $archives[0].FullName $checksumPath --repo "$env:GH_REPO" --verify-tag --generate-notes --title "VPN Counter $env:RELEASE_TAG"

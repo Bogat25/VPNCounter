@@ -6,10 +6,12 @@ CUDA FP16, Hungarian, beam size 5, and minimum match confidence 0.45.
 
 ## Automated checks
 
-- `pytest -q`: **26 passed**. Coverage includes Hungarian VPN forms, confidence
+- `pytest -q`: **42 passed**. Coverage includes Hungarian VPN forms, confidence
   filtering, overlapping-window duplicates, rapid repeated mentions, bounded
   audio history, overflow/reset invalidation, validated settings, shared UI and
-  overlay state, manual corrections, and rejection of stale queued results.
+  overlay state, manual corrections, rejection of stale queued results, tray
+  restoration and explicit exit, four corner anchors, settings migration, and
+  versioned release packaging.
 - `ruff check .` and `ruff format --check .`: passed.
 - The real widgets were rendered and visually inspected. Preview images are
   generated locally in `artifacts/` using `scripts/preview.py`.
@@ -68,6 +70,29 @@ tool; it is not included in the application or its dependencies.
 
 Local runtime, GUI, speech reports, generated audio, models, and build output
 are excluded from Git. The reproducible source and dependency lock are committed.
+
+## Tray, positioning, and release checks
+
+- A native Windows Qt run confirmed that the V icon was registered in the tray,
+  closing the control panel left the overlay running, tray activation restored
+  the panel, and Exit removed both the tray icon and overlay. No microphone or
+  model was opened during this check.
+- All four corner presets were checked against a display with a negative global
+  origin, then checked again after changing font size and growing the counter
+  to five digits. A native Windows bottom-right check also passed. A manually
+  dragged position switches to Custom and survives resizing.
+- The source and rebuilt executable passed `--smoke-test`, including rendering
+  both windows and importing the frozen speech dependencies without loading a
+  model or capturing audio.
+- Actionlint 1.7.12 accepted `.github/workflows/release.yml`. The dependency
+  lock is current. The local version validator accepted `v0.1.0`; automated
+  tests rejected malformed tags and mismatched source versions.
+- Local packaging produced a 1,543,646,254-byte ZIP (about 1.44 GiB) containing
+  500 files. The executable, cuBLAS, cuDNN, VAD assets, launch instructions, and
+  version manifest were present. Every ZIP CRC and the SHA-256 checksum passed.
+- The GitHub-hosted build and publication were not run. No tags, commits, or
+  releases were published remotely. A matching version tag must be published by
+  the user to exercise the hosted workflow.
 
 ## Rehearsal still needed
 

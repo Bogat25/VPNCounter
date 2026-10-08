@@ -33,6 +33,9 @@ flowchart LR
   update both windows. The recent transcript and detection history stay in memory.
 - `overlay.py`: a frameless topmost Qt window. Locked mode passes mouse events
   through and does not accept keyboard focus. Unlocked mode permits dragging.
+  The UI anchors it to any display corner with a 24-pixel logical margin, or
+  retains a custom dragged position. Right and bottom anchors are recalculated
+  when the counter width or font size changes.
 - `native.py`: Windows global hotkeys, unregistered on shutdown. Conflicts are
   reported to the control panel.
 - `runtime.py`: discovers NVIDIA wheel DLL directories and exposes them only to
@@ -57,6 +60,14 @@ loop. It never forcibly terminates a thread using the GPU. A model download or
 inference already in progress finishes before shutdown completes. A local lock
 prevents accidentally launching two copies against the same GPU and settings.
 
+When the Windows tray is available, closing the control panel hides it while
+recognition and the overlay continue. The V tray icon restores the panel and
+offers listening controls, overlay visibility, and an explicit Exit action.
+Exit starts the existing graceful worker shutdown. If no tray is available,
+closing the panel exits normally. Qt's
+[QSystemTrayIcon](https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QSystemTrayIcon.html)
+handles native activation and the context menu.
+
 ## Reliability boundaries
 
 This is buffered speech transcription, not a phonetic keyword detector with a
@@ -77,3 +88,8 @@ The PyInstaller specification produces a folder distribution including the
 GPU libraries. Models are kept separately under the user's local application
 data. Pin dependencies with `uv.lock`; setup and build scripts do not need
 credentials or write to external repositories.
+
+Version-tag automation and local release packaging are described in
+[releases.md](releases.md). The packaged smoke check renders both windows and
+imports the recognition stack without a microphone or model download, allowing
+the release build to run on a hosted Windows runner without an NVIDIA GPU.

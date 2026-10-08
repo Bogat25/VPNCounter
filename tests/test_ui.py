@@ -4,8 +4,8 @@ from dataclasses import replace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from vpn_counter.matching import RecognitionBatch, SpeechWord
 from vpn_counter.settings import Settings
@@ -19,7 +19,7 @@ def application():
 
 @pytest.fixture
 def window(application):
-    widget = MainWindow(replace(Settings(), last_count=0), save_settings=False)
+    widget = MainWindow(replace(Settings(), last_count=0), save_settings=False, enable_tray=False)
     widget.show()
     application.processEvents()
     yield widget
@@ -66,3 +66,73 @@ def test_stale_batch_after_reset_is_discarded(window):
     assert window.count == 0
     window.worker = None
     window.state = "idle"
+
+
+@pytest.mark.parametrize("corner", ["top-left", "top-right", "bottom-left", "bottom-right"])
+def test_corner_stays_anchored_after_count_and_size_changes(window, monkeypatch, corner):
+    class Screen:
+        def geometry(self):
+            return QRect(-1920, -200, 1920, 1080)
+
+    monkeypatch.setattr(window, "_selected_screen", Screen)
+    window.position_combo.setCurrentIndex(window.position_combo.findData(corner))
+    for size, count in ((36, 1), (60, 10000)):
+        window.size_slider.setValue(size)
+        window.adjust_count(count)
+        overlay = window.overlay
+        if corner.endswith("right"):
+            assert -1920 + 1920 - (overlay.x() + overlay.width()) == 24
+        else:
+            assert overlay.x() - (-1920) == 24
+        if corner.startswith("bottom"):
+            assert -200 + 1080 - (overlay.y() + overlay.height()) == 24
+        else:
+            assert overlay.y() - (-200) == 24
+
+
+def test_drag_switches_to_custom_position_and_keeps_it_when_resized(window, monkeypatch):
+    class Screen:
+        def geometry(self):
+            return QRect(100, 200, 1920, 1080)
+
+    monkeypatch.setattr(window, "_selected_screen", Screen)
+    window._overlay_moved(230, 350)
+    assert window.position_combo.currentData() == "custom"
+    assert (window.settings.overlay_x, window.settings.overlay_y) == (130, 150)
+    window.size_slider.setValue(60)
+    assert (window.overlay.x(), window.overlay.y()) == (230, 350)
+
+
+def test_tray_reopens_closed_panel_and_explicit_exit_stops_app(application, monkeypatch):
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: True))
+    widget = MainWindow(Settings(), save_settings=False)
+    try:
+        widget.show()
+        application.processEvents()
+        assert widget.tray.isVisible()
+        widget.close()
+        assert not widget.isVisible()
+        assert widget.overlay.isVisible()
+        assert widget.tray.isVisible()
+        widget.tray_open.trigger()
+        assert widget.isVisible()
+        widget.hide_to_tray()
+        widget._tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        assert widget.isVisible()
+        widget.tray_overlay.setChecked(False)
+        assert not widget.overlay.isVisible()
+        widget.show_overlay.setChecked(True)
+        assert widget.tray_overlay.isChecked()
+        widget.adjust_count(3)
+        assert "3 mentions" in widget.tray.toolTip()
+        widget.tray_quit.trigger()
+        assert not widget.tray.isVisible()
+        assert not widget.overlay.isVisible()
+    finally:
+        widget.quit_application()
+
+
+def test_selecting_custom_position_unlocks_dragging(window):
+    window.position_combo.setCurrentIndex(window.position_combo.findData("custom"))
+    assert not window.lock_overlay.isChecked()
+    assert not window.overlay.locked

@@ -23,3 +23,17 @@ def test_invalid_settings_recover_without_crashing(tmp_path):
     assert settings.model == "large-v3"
     assert settings.last_count == 0
     assert settings.overlay_size == 80
+
+
+def test_existing_dragged_position_is_preserved_when_loading_old_settings(tmp_path):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"overlay_x": 140, "overlay_y": 85}), encoding="utf-8")
+    settings = Settings.load(path)
+    assert settings.overlay_corner == "custom"
+    assert (settings.overlay_x, settings.overlay_y) == (140, 85)
+
+
+def test_invalid_corner_recovers_to_top_left(tmp_path):
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"overlay_corner": "unknown"}), encoding="utf-8")
+    assert Settings.load(path).overlay_corner == "top-left"

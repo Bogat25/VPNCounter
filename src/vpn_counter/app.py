@@ -41,18 +41,62 @@ def diagnose(output: Path) -> int:
     return 0 if report["ok"] else 1
 
 
+def smoke_test(output: Path) -> int:
+    """Exercise the frozen UI and recognition imports without capturing audio."""
+    import json
+
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    report = {"ok": False, "microphone_opened": False, "model_loaded": False}
+    window = None
+    try:
+        import av
+        import faster_whisper  # noqa: F401 -- verify the frozen speech dependencies import
+        from PySide6.QtCore import qVersion
+        from PySide6.QtWidgets import QApplication
+
+        from vpn_counter import __version__
+        from vpn_counter.settings import Settings
+        from vpn_counter.ui import MainWindow
+
+        application = QApplication.instance() or QApplication([])
+        application.setStyle("Fusion")
+        window = MainWindow(Settings(), save_settings=False, enable_tray=False)
+        window.show()
+        application.processEvents()
+        report.update(
+            ok=not window.grab().isNull() and not window.overlay.grab().isNull(),
+            version=__version__,
+            qt_version=qVersion(),
+            av_version=av.__version__,
+        )
+    except Exception as error:
+        report["error"] = f"{type(error).__name__}: {error}"
+    finally:
+        if window is not None:
+            window.quit_application()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return 0 if report["ok"] else 1
+
+
 def main() -> int:
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-    if "--diagnose" in sys.argv:
+    if "--diagnose" in sys.argv or "--smoke-test" in sys.argv:
         import argparse
 
-        parser = argparse.ArgumentParser(description="Verify the local GPU recognition runtime")
-        parser.add_argument("--diagnose", type=Path, required=True, metavar="REPORT.json")
-        return diagnose(parser.parse_args().diagnose)
+        parser = argparse.ArgumentParser(description="Verify the installed application runtime")
+        mode = parser.add_mutually_exclusive_group(required=True)
+        mode.add_argument("--diagnose", type=Path, metavar="REPORT.json")
+        mode.add_argument("--smoke-test", type=Path, metavar="REPORT.json")
+        arguments = parser.parse_args()
+        return (
+            diagnose(arguments.diagnose) if arguments.diagnose else smoke_test(arguments.smoke_test)
+        )
 
     from PySide6.QtCore import QLockFile, Qt
     from PySide6.QtWidgets import QApplication, QMessageBox
 
+    from vpn_counter import __version__
     from vpn_counter.settings import data_directory
     from vpn_counter.ui import MainWindow, app_icon
 
@@ -62,6 +106,7 @@ def main() -> int:
     application = QApplication(sys.argv)
     application.setStyle("Fusion")
     application.setApplicationName("VPN Counter")
+    application.setApplicationVersion(__version__)
     application.setOrganizationName("VPNCounter")
     application.setWindowIcon(app_icon())
     data_directory().mkdir(parents=True, exist_ok=True)
