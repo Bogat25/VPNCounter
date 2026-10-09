@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPen
-from PySide6.QtWidgets import QGraphicsOpacityEffect, QWidget
+from PySide6.QtWidgets import QWidget
 
 from vpn_counter.settings import Settings
 
@@ -19,14 +19,6 @@ class CounterOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self._set_flags()
-        self._effect = QGraphicsOpacityEffect(self)
-        self._effect.setOpacity(1)
-        self.setGraphicsEffect(self._effect)
-        self._pulse = QPropertyAnimation(self._effect, b"opacity", self)
-        self._pulse.setDuration(420)
-        self._pulse.setStartValue(0.4)
-        self._pulse.setEndValue(1.0)
-        self._pulse.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._resize()
 
     def _set_flags(self) -> None:
@@ -56,13 +48,10 @@ class CounterOverlay(QWidget):
         self._resize()
         self.update()
 
-    def set_count(self, count: int, animate: bool = False) -> None:
+    def set_count(self, count: int) -> None:
         self.count = count
         self._resize()
         self.update()
-        if animate and self.isVisible():
-            self._pulse.stop()
-            self._pulse.start()
 
     def _resize(self) -> None:
         size = self.settings.overlay_size

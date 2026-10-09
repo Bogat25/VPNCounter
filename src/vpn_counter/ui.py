@@ -814,7 +814,7 @@ class MainWindow(QMainWindow):
     def adjust_count(self, amount: int) -> None:
         self.count = max(0, self.count + amount)
         self.counter_label.setText(str(self.count))
-        self.overlay.set_count(self.count, animate=amount > 0)
+        self.overlay.set_count(self.count)
         self._place_overlay()
         self._update_tray()
 
