@@ -6,6 +6,11 @@ separate control panel stays on the presenter's screen.
 
 Default recognition: **Whisper large-v3 · NVIDIA CUDA · FP16 · Hungarian**.
 
+For a released Windows build, choose the **`VPNCounter-v…-windows-x64.exe`**
+asset to download and run a single portable file. The **`.zip`** asset contains
+the folder version, including `VPNCounter.exe`; extract the entire ZIP to use
+it. Neither needs installation or a separate Python setup.
+
 ## Run on this computer
 
 Double-click **`Start VPN Counter.cmd`**, or run:
@@ -106,11 +111,16 @@ script checks this before replacing files.
 .\scripts\build.ps1
 ```
 
-Run `dist\VPNCounter\VPNCounter.exe`. Keep the entire `dist\VPNCounter` folder
-together: it includes Python, Qt, audio libraries, and NVIDIA runtime libraries.
-Model files remain in the local application-data folder and are downloaded on
-first use on another machine. The executable does not require a separate Python
-installation on the destination computer.
+The build produces both formats:
+
+- `dist\VPNCounter-portable.exe`: a standalone file containing Python, Qt, audio,
+  and NVIDIA libraries. It extracts libraries into temporary storage at launch
+  and removes them on normal exit, so startup takes longer.
+- `dist\VPNCounter\VPNCounter.exe`: the folder version. Keep its entire
+  `dist\VPNCounter` folder together, including `_internal`. It starts faster.
+
+Both use the same models and settings in local application data. Models download
+on first use on another machine. Neither requires Python on the destination.
 
 ## Development and checks
 

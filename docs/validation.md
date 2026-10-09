@@ -1,14 +1,14 @@
 # Verification
 
-Checked on 2026-10-08 on Windows 11, Python 3.12.10, and an NVIDIA GeForce
+Checked on 2026-10-08 and 2026-10-09 on Windows 11, Python 3.12.10, and an NVIDIA GeForce
 RTX 5060 Laptop GPU with 8151 MiB VRAM. Current source and packaged UI checks
-are for version 0.1.2. The initial hardware checks below used full Whisper
+are for version 0.1.4. The initial hardware checks below used full Whisper
 large-v3, CUDA FP16, Hungarian, beam size 5, and minimum match confidence 0.45;
 they predate the removal of the VPN keyword hint.
 
 ## Automated checks
 
-- `pytest -q`: **83 passed**. Coverage includes Hungarian VPN forms, confidence
+- `pytest -q`: **90 passed**. Coverage includes Hungarian VPN forms, confidence
   filtering, overlapping-window duplicates, rapid repeated mentions, bounded
   audio history, overflow/reset invalidation, validated settings, shared UI and
   overlay state, manual corrections, rejection of stale queued results, tray
@@ -18,7 +18,9 @@ they predate the removal of the VPN keyword hint.
   Windows junctions, and process-local download cache locations. New cases cover
   neutral decoding, invalid word timings, weak letters in spelled acronyms,
   tag-derived versions, byte percentages, cached files, transfer retries, Xet
-  network/reconstruction updates, and late progress during shutdown.
+  network/reconstruction updates, and late progress during shutdown. Release
+  checks cover both download formats, missing standalone builds, checksum
+  tampering, asset size limits, custom build paths, and CLI packaging/verification.
 - `ruff check .` and `ruff format --check .`: passed.
 - The real widgets were rendered and visually inspected. Preview images are
   generated locally in `artifacts/` using `scripts/preview.py`.
@@ -62,8 +64,8 @@ tool; it is not included in the application or its dependencies.
   ordinary Hungarian speech, an uncertain hallucinated segment, and weak letters.
 - Added `hungarian-everyday-negative.txt` with everyday phrases including
   `végén`, `gépen`, and `szépen`. The synthetic clip was generated locally, but
-  current GPU recognition checks could not complete: the full large-v3 weights
-  are absent and both download attempts stalled. The initial GPU results above
+  the 0.1.2 GPU recognition checks could not complete: the full large-v3 weights
+  were absent and both download attempts stalled. The initial GPU results above
   remain a historical baseline. Current false-positive rates still need a
   known-count passage with the real presenters and microphone.
 - A real public tokenizer download through the installed Hub client produced
@@ -148,6 +150,24 @@ are excluded from Git. The reproducible source and dependency lock are committed
 - Large-v3 CUDA inference and Silero VAD still passed against the existing
   cache after configuring process-local downloader cache paths. No microphone
   was opened by that diagnostic.
+
+## Standalone portable release
+
+- Version 0.1.4 builds both the folder app and a standalone EXE from the same
+  PyInstaller analysis. Both passed their frozen UI/speech import checks, with
+  the correct version, without opening a microphone or loading a model.
+- The standalone executable is about 1.44 GiB. Its embedded archive contains
+  Python, Qt, cuBLAS, cuDNN, Silero VAD, and the Xet download extension. The
+  archive reader found 510 entries totaling about 2.37 GiB before extraction.
+- The standalone smoke run used a working directory without `_internal` and
+  an isolated temporary directory. Its extraction was observed and the
+  temporary files were removed on normal exit. The complete extraction, UI
+  check, and exit took 28.6 seconds on this computer. Normal startup time varies.
+- Release packaging preserves the folder ZIP and adds the versioned standalone
+  EXE with checksums for both. Both hashes, ZIP CRCs, version metadata, and
+  matches with the tested build files were verified locally. The workflow checks both packaged formats and
+  verifies both assets before publication. Actionlint and PowerShell syntax
+  checks passed. GitHub publication was not run locally.
 
 ## Rehearsal still needed
 

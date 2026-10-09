@@ -1,6 +1,6 @@
 [project]
 name = "vpn-counter"
-version = "0.1.2"
+version = "0.1.4"
 description = "An offline Hungarian speech counter with a PowerPoint overlay."
 requires-python = ">=3.12,<3.14"
 dependencies = [

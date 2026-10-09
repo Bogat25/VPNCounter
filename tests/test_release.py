@@ -102,15 +102,17 @@ def test_workflow_prepare_command_accepts_next_tag_from_old_source(release_root)
 
 
 @pytest.mark.parametrize("custom_folder", [False, True])
-def test_release_preserves_executable_gpu_files_and_checksum(release_root, custom_folder):
-    release.prepare_version("v0.1.2", release_root)
-    distribution = release_root / (
-        "separate-build/VPNCounter" if custom_folder else "dist/VPNCounter"
-    )
-    gpu = distribution / "_internal/nvidia/cudnn/bin"
-    gpu.mkdir(parents=True)
-    (distribution / "VPNCounter.exe").write_bytes(b"executable fixture")
-    (gpu / "cudnn64_9.dll").write_bytes(b"GPU runtime fixture")
+def test_release_preserves_executable_gpu_files_and_checksum(built_release, custom_folder):
+    release_root = built_release
+    distribution = release_root / "dist/VPNCounter"
+    if custom_folder:
+        destination = release_root / "separate-build/VPNCounter"
+        shutil.copytree(distribution, destination)
+        shutil.copyfile(
+            distribution.parent / "VPNCounter-portable.exe",
+            destination.parent / "VPNCounter-portable.exe",
+        )
+        distribution = destination
     output = release_root / "artifacts/releases"
     archive = release.package_release(
         "v0.1.2", output, release_root, distribution=distribution if custom_folder else None
@@ -124,5 +126,75 @@ def test_release_preserves_executable_gpu_files_and_checksum(release_root, custo
         )
         assert contents.read("VPNCounter/VERSION.txt") == b"0.1.2\n"
         assert "Double-click" in contents.read("VPNCounter/README.md").decode()
-    checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-    assert (output / "SHA256SUMS.txt").read_text() == f"{checksum}  {archive.name}\n"
+    portable = output / "VPNCounter-v0.1.2-windows-x64.exe"
+    assert portable.read_bytes() == b"standalone executable fixture"
+    expected = "".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+        for path in (archive, portable)
+    )
+    assert (output / "SHA256SUMS.txt").read_text() == expected
+    assert release.verify_release("v0.1.2", output, release_root) == (archive, portable)
+
+
+@pytest.fixture
+def built_release(release_root):
+    release.prepare_version("v0.1.2", release_root)
+    distribution = release_root / "dist/VPNCounter"
+    gpu = distribution / "_internal/nvidia/cudnn/bin"
+    gpu.mkdir(parents=True)
+    (distribution / "VPNCounter.exe").write_bytes(b"executable fixture")
+    (gpu / "cudnn64_9.dll").write_bytes(b"GPU runtime fixture")
+    (distribution.parent / "VPNCounter-portable.exe").write_bytes(b"standalone executable fixture")
+    return release_root
+
+
+def test_missing_standalone_executable_cannot_publish_a_zip_only_release(built_release):
+    (built_release / "dist/VPNCounter-portable.exe").unlink()
+    output = built_release / "artifacts/releases"
+    with pytest.raises(FileNotFoundError, match="VPNCounter-portable.exe"):
+        release.package_release("v0.1.2", output, built_release)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("extension", [".zip", ".exe", ".txt"])
+def test_tampering_with_either_download_or_checksums_blocks_verification(built_release, extension):
+    output = built_release / "artifacts/releases"
+    release.package_release("v0.1.2", output, built_release)
+    asset = next(output.glob(f"*{extension}"))
+    asset.write_bytes(b"corrupted")
+    with pytest.raises(ValueError, match="checksums"):
+        release.verify_release("v0.1.2", output, built_release)
+
+
+def test_custom_standalone_executable_is_copied_and_checksummed(built_release):
+    portable = built_release / "separate.exe"
+    portable.write_bytes(b"custom standalone")
+    output = built_release / "artifacts/releases"
+    release.package_release("v0.1.2", output, built_release, portable_executable=portable)
+    assert (
+        release.verify_release("v0.1.2", output, built_release)[1].read_bytes()
+        == portable.read_bytes()
+    )
+
+
+def test_oversized_standalone_executable_is_rejected_before_packaging(built_release, monkeypatch):
+    monkeypatch.setattr(release, "MAX_ASSET_SIZE", 10)
+    output = built_release / "artifacts/releases"
+    with pytest.raises(ValueError, match="portable executable exceeds"):
+        release.package_release("v0.1.2", output, built_release)
+    assert not output.exists()
+
+
+def test_cli_packages_and_verifies_both_windows_downloads(built_release):
+    script = built_release / "scripts/release.py"
+    script.parent.mkdir()
+    shutil.copyfile(script_path, script)
+    for mode in ([], ["--verify-assets"]):
+        result = subprocess.run(
+            [sys.executable, str(script), "--tag", "v0.1.2", *mode],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+    assert len(list((built_release / "artifacts/releases").glob("*.exe"))) == 1

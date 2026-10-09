@@ -110,12 +110,20 @@ accent, projector, and PowerPoint checks remain part of rehearsal.
 
 ## Packaging
 
-The PyInstaller specification produces a folder distribution including the
-GPU libraries. Models are kept separately under the user's local application
-data. Pin dependencies with `uv.lock`; setup and build scripts do not need
-credentials or write to external repositories.
+The PyInstaller specification shares one analysis and Python module archive
+between two outputs: the existing folder distribution and a standalone portable
+EXE. Both contain the same GPU libraries. The standalone EXE compresses its
+dependencies and extracts them to a temporary `_MEI…` directory at startup;
+the bootloader removes that directory on normal exit. Forced termination can
+leave it behind. See PyInstaller's
+[one-file operation](https://pyinstaller.org/en/stable/operating-mode.html#how-the-one-file-program-works).
+The folder version avoids this extraction and starts faster.
+
+Models and settings are kept separately under the user's local application
+data, shared by both formats. Pin dependencies with `uv.lock`; setup and build
+scripts do not need credentials or write to external repositories.
 
 Version-tag automation and local release packaging are described in
 [releases.md](releases.md). The packaged smoke check renders both windows and
-imports the recognition stack without a microphone or model download, allowing
+imports the recognition stack in both formats without a microphone or model download, allowing
 the release build to run on a hosted Windows runner without an NVIDIA GPU.

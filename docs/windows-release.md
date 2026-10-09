@@ -1,8 +1,14 @@
 # VPN Counter for Windows
 
-Extract the entire ZIP, open the VPNCounter folder, and double-click
-VPNCounter.exe. Keep the _internal folder next to the executable.
-Python does not need to be installed separately.
+Choose one Windows download:
+
+- Standalone `.exe`: download and double-click it. No companion folder is needed.
+- Folder `.zip`: extract the entire ZIP, open VPNCounter, and double-click
+  VPNCounter.exe. Keep the _internal folder next to it. This version starts faster.
+
+Both include Python and GPU runtime libraries. The standalone EXE extracts its
+libraries into Windows temporary storage on each launch and removes them on
+normal exit. Allow extra startup time and about 3 GB of temporary disk space.
 
 Choose a microphone and your presentation display, then click Start listening.
 The default model is Whisper large-v3 on an NVIDIA GPU. The first session
@@ -34,8 +40,8 @@ Clean up and exit waits for recognition to stop, removes the selected data, and
 exits. When both options are selected, the empty data folder is also removed.
 Removed models download again on the next listening session. Normal exits and
 updates preserve the model cache. After cleanup exits, delete the portable
-VPNCounter folder to remove the executable and its bundled libraries. Deleting
-that folder alone does not remove the data in LocalAppData.
+EXE or VPNCounter folder to remove the app. Deleting either alone does not remove
+the data in LocalAppData.
 
 Rehearse with the actual microphone and
 PowerPoint slideshow before presenting. Share the whole presentation display

@@ -16,7 +16,7 @@ jobs:
   release:
     name: Test, package, and release Windows x64
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write
     env:
@@ -54,31 +54,35 @@ jobs:
       - name: Run tests
         run: .venv/Scripts/python.exe -m pytest -q
 
-      - name: Build the Windows application with GPU libraries
+      - name: Build folder and standalone Windows apps with GPU libraries
         run: .venv/Scripts/python.exe -m PyInstaller --noconfirm VPNCounter.spec
 
-      - name: Check the packaged application without a microphone or GPU
+      - name: Check both packaged apps without a microphone or GPU
         run: |
-          $appProcess = Start-Process -FilePath './dist/VPNCounter/VPNCounter.exe' -ArgumentList @('--smoke-test', 'artifacts/packaged-smoke.json') -PassThru -WindowStyle Hidden
-          if (-not $appProcess.WaitForExit(60000)) { throw 'Packaged application smoke check timed out.' }
-          if ($appProcess.ExitCode -ne 0) { throw 'Packaged application failed its smoke check.' }
-          $report = Get-Content -LiteralPath 'artifacts/packaged-smoke.json' -Raw | ConvertFrom-Json
-          if (-not $report.ok) { throw 'Packaged application reported a failed smoke check.' }
-          if ($report.version -ne $env:RELEASE_TAG.Substring(1)) { throw 'Packaged application version does not match the release tag.' }
+          $checks = @{
+            './dist/VPNCounter/VPNCounter.exe' = 'artifacts/folder-smoke.json'
+            './dist/VPNCounter-portable.exe' = 'artifacts/portable-smoke.json'
+          }
+          foreach ($check in $checks.GetEnumerator()) {
+            $appProcess = Start-Process -FilePath $check.Key -ArgumentList @('--smoke-test', $check.Value) -PassThru -WindowStyle Hidden
+            if (-not $appProcess.WaitForExit(180000)) { throw "Packaged application smoke check timed out: $($check.Key)" }
+            if ($appProcess.ExitCode -ne 0) { throw "Packaged application failed its smoke check: $($check.Key)" }
+            $report = Get-Content -LiteralPath $check.Value -Raw | ConvertFrom-Json
+            if (-not $report.ok) { throw 'Packaged application reported a failed smoke check.' }
+            if ($report.version -ne $env:RELEASE_TAG.Substring(1)) { throw 'Packaged application version does not match the release tag.' }
+          }
 
-      - name: Create versioned ZIP and SHA-256 checksum
+      - name: Create versioned ZIP, portable EXE, and SHA-256 checksums
         run: .venv/Scripts/python.exe scripts/release.py --tag "$env:RELEASE_TAG"
 
-      - name: Verify the archive and publish the tagged release
+      - name: Verify both downloads and publish the tagged release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          $archives = @(Get-ChildItem -LiteralPath 'artifacts/releases' -Filter '*.zip' -File)
-          if ($archives.Count -ne 1) { throw 'Expected one Windows release archive.' }
+          & .venv/Scripts/python.exe scripts/release.py --tag "$env:RELEASE_TAG" --verify-assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $archivePath = Join-Path (Get-Location) "artifacts/releases/VPNCounter-${env:RELEASE_TAG}-windows-x64.zip"
+          $executablePath = Join-Path (Get-Location) "artifacts/releases/VPNCounter-${env:RELEASE_TAG}-windows-x64.exe"
           $checksumPath = Join-Path (Get-Location) 'artifacts/releases/SHA256SUMS.txt'
-          $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw) -split '\s+')[0]
-          if ((Get-FileHash -LiteralPath $archives[0].FullName -Algorithm SHA256).Hash -ne $expectedHash) {
-            throw 'Release archive checksum mismatch.'
-          }
-          gh release create "$env:RELEASE_TAG" $archives[0].FullName $checksumPath --repo "$env:GH_REPO" --verify-tag --generate-notes --title "VPN Counter $env:RELEASE_TAG"
+          gh release create "$env:RELEASE_TAG" $executablePath $archivePath $checksumPath --repo "$env:GH_REPO" --verify-tag --generate-notes --notes-file docs/release-notes.md --title "VPN Counter $env:RELEASE_TAG"

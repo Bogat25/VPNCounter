@@ -29,3 +29,15 @@ collection = COLLECT(
     name='VPNCounter',
     upx=False,
 )
+
+# A separate, self-contained download using the same analyzed dependencies.
+portable = EXE(
+    archive,
+    analysis.scripts,
+    analysis.binaries,
+    analysis.datas,
+    [],
+    name='VPNCounter-portable',
+    console=False,
+    upx=False,
+)

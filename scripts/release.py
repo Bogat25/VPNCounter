@@ -6,11 +6,13 @@ import argparse
 import ast
 import hashlib
 import re
+import shutil
 import tomllib
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+MAX_ASSET_SIZE = 2 * 1024**3
 
 
 def version_from_tag(tag: str) -> str:
@@ -102,26 +104,66 @@ def prepare_version(tag: str, root: Path = ROOT) -> str:
     return validate_version(tag, root)
 
 
+def release_assets(tag: str, output: Path) -> tuple[Path, Path]:
+    version_from_tag(tag)
+    name = f"VPNCounter-{tag}-windows-x64"
+    return output / f"{name}.zip", output / f"{name}.exe"
+
+
+def checksums(assets: tuple[Path, Path]) -> str:
+    lines = []
+    for asset in assets:
+        with asset.open("rb") as stream:
+            checksum = hashlib.file_digest(stream, "sha256").hexdigest()
+        lines.append(f"{checksum}  {asset.name}\n")
+    return "".join(lines)
+
+
+def verify_release(tag: str, output: Path, root: Path = ROOT) -> tuple[Path, Path]:
+    validate_version(tag, root)
+    assets = release_assets(tag, output)
+    for asset in assets:
+        if not asset.is_file():
+            raise FileNotFoundError(f"Missing release asset: {asset.name}")
+        if asset.stat().st_size >= MAX_ASSET_SIZE:
+            raise ValueError(f"{asset.name} exceeds GitHub's 2 GiB per-asset limit")
+    if (output / "SHA256SUMS.txt").read_text(encoding="utf-8") != checksums(assets):
+        raise ValueError("Release asset checksums do not match SHA256SUMS.txt")
+    return assets
+
+
 def package_release(
-    tag: str, output: Path, root: Path = ROOT, *, distribution: Path | None = None
+    tag: str,
+    output: Path,
+    root: Path = ROOT,
+    *,
+    distribution: Path | None = None,
+    portable_executable: Path | None = None,
 ) -> Path:
     version = validate_version(tag, root)
     distribution = distribution or root / "dist/VPNCounter"
+    portable_executable = portable_executable or distribution.parent / "VPNCounter-portable.exe"
     if not (distribution / "VPNCounter.exe").is_file():
-        raise FileNotFoundError("Build dist/VPNCounter/VPNCounter.exe before packaging a release")
+        raise FileNotFoundError(
+            f"Build {distribution / 'VPNCounter.exe'} before packaging a release"
+        )
+    if not portable_executable.is_file():
+        raise FileNotFoundError(f"Build {portable_executable} before packaging a release")
+    if portable_executable.stat().st_size >= MAX_ASSET_SIZE:
+        raise ValueError("The portable executable exceeds GitHub's 2 GiB per-asset limit")
     output.mkdir(parents=True, exist_ok=True)
-    archive_path = output / f"VPNCounter-{tag}-windows-x64.zip"
+    assets = release_assets(tag, output)
+    archive_path, executable_path = assets
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for path in sorted(distribution.rglob("*")):
             if path.is_file():
                 archive.write(path, Path("VPNCounter") / path.relative_to(distribution))
         archive.write(root / "docs/windows-release.md", "VPNCounter/README.md")
         archive.writestr("VPNCounter/VERSION.txt", version + "\n")
-    if archive_path.stat().st_size >= 2 * 1024**3:
+    if archive_path.stat().st_size >= MAX_ASSET_SIZE:
         raise ValueError("The archive exceeds GitHub's 2 GiB per-asset limit")
-    with archive_path.open("rb") as stream:
-        checksum = hashlib.file_digest(stream, "sha256").hexdigest()
-    (output / "SHA256SUMS.txt").write_text(f"{checksum}  {archive_path.name}\n", encoding="utf-8")
+    shutil.copyfile(portable_executable, executable_path)
+    (output / "SHA256SUMS.txt").write_text(checksums(assets), encoding="utf-8")
     return archive_path
 
 
@@ -130,12 +172,16 @@ def main() -> int:
     parser.add_argument("--tag", required=True)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--verify-only", action="store_true")
+    mode.add_argument("--verify-assets", action="store_true", help="Verify both release downloads")
     mode.add_argument(
         "--prepare", action="store_true", help="Apply the tag version before building"
     )
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/releases")
     parser.add_argument(
         "--distribution", type=Path, help="Use an application folder from a custom build"
+    )
+    parser.add_argument(
+        "--portable-executable", type=Path, help="Use a standalone EXE from a custom build"
     )
     arguments = parser.parse_args()
     try:
@@ -145,12 +191,19 @@ def main() -> int:
         version = validate_version(arguments.tag)
         if arguments.verify_only:
             print(f"Verified release version {version}")
+        elif arguments.verify_assets:
+            verify_release(arguments.tag, arguments.output)
+            print("Verified Windows ZIP and portable EXE checksums")
         else:
-            print(
-                package_release(
-                    arguments.tag, arguments.output, distribution=arguments.distribution
-                )
+            package_release(
+                arguments.tag,
+                arguments.output,
+                distribution=arguments.distribution,
+                portable_executable=arguments.portable_executable,
             )
+            for asset in release_assets(arguments.tag, arguments.output):
+                print(asset)
+            print(arguments.output / "SHA256SUMS.txt")
         return 0
     except (ValueError, OSError) as error:
         parser.exit(1, f"Release packaging failed: {error}\n")
