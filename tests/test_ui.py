@@ -240,7 +240,10 @@ def test_recognition_settings_can_change_during_a_session(
         window.toggle_listening()
     assert window.state == state
     for widget in (
-        window.model_combo, window.device_combo, window.microphone_combo, window.refresh_button
+        window.model_combo,
+        window.device_combo,
+        window.microphone_combo,
+        window.refresh_button,
     ):
         assert widget.isEnabled()
     combo = getattr(window, f"{control}_combo")
@@ -273,6 +276,29 @@ def test_rapid_settings_changes_apply_only_the_latest_choices(window, recognizer
     old.finish()
     assert len(recognizers) == 2
     assert window.worker.options == EngineOptions("turbo", "cpu", 20)
+
+
+@pytest.mark.parametrize("state", ["loading", "listening", "paused"])
+def test_model_dropdown_accepts_user_input_during_a_session(window, recognizers, state):
+    window.toggle_listening()
+    old = recognizers[0]
+    if state != "loading":
+        old.listening.emit()
+    if state == "paused":
+        window.toggle_listening()
+    combo = window.model_combo
+    QTest.mouseClick(combo, Qt.MouseButton.LeftButton)
+    assert combo.view().isVisible()
+    QTest.keyClick(combo.view(), Qt.Key.Key_Home)
+    QTest.keyClick(combo.view(), Qt.Key.Key_Down)
+    QTest.keyClick(combo.view(), Qt.Key.Key_Return)
+    assert combo.currentData() == "turbo"
+    assert old.stop_calls == 1
+    old.finish()
+    if state == "paused":
+        assert window.worker is None
+        window.toggle_listening()
+    assert window.worker.options.model == "turbo"
 
 
 @pytest.mark.parametrize("action", ["end_session", "close"])

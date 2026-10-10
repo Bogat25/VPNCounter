@@ -192,6 +192,27 @@ Checked on 2026-10-10:
   a microphone or loaded a model. Switching actual Whisper models and physical
   microphones still needs a manual session.
 
+## Portable update and model dropdown regression
+
+Checked on 2026-10-10 after a report that model selection was still disabled:
+
+- The running downloaded v0.1.5 executable contained the old UI code, including
+  setup locking when starting recognition. Its bundled module lacked the settings
+  change handler present in the fixed local build. Downloading or building a new
+  EXE does not replace a copy already running in the tray.
+- Added mouse and keyboard input checks against the model dropdown while loading,
+  listening, and paused. All three passed against both the source module and the
+  UI bytecode extracted directly from the fixed standalone EXE. Simulated workers
+  kept these checks independent of downloaded models and microphone hardware.
+- `uv run --extra gpu pytest`: **114 passed**; `ruff check .` and
+  `ruff format --check .`: passed. Corrected test formatting required by the
+  release workflow, which was missed during the earlier local verification.
+- Prepared a clearly named local copy of the fixed standalone EXE and verified
+  that its SHA-256 matches the tested build. Updating requires exiting the old
+  tray process and opening the fixed copy; settings and models need no cleanup.
+- Opened the fixed copy after the old process exited and confirmed that its
+  native control panel was running from the updated executable.
+
 ## Rehearsal still needed
 
 Run the app with the actual presenters and microphone. Check a known-count

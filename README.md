@@ -33,6 +33,10 @@ choices after the current download or recognition operation finishes. Changes
 while paused leave listening stopped; click Start listening when ready.
 The counter and cached models are kept. Cleanup is not needed to change settings.
 
+When updating, exit the running copy through the V tray icon's **Exit VPN
+Counter** menu before opening the new EXE. Closing the control panel leaves that
+copy running in the tray. The updated app uses your existing settings and models.
+
 The **V icon in the Windows tray** (beside the clock, possibly inside the `^`
 hidden-icons menu) reopens the control panel with a click. Right-click it for
 listening controls, overlay visibility, or **Exit VPN Counter**. Closing the
