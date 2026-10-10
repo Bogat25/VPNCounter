@@ -16,6 +16,13 @@ downloads the model and shows its percentage, then loads and warms up recognitio
 Subsequent sessions work offline. An NVIDIA driver is
 required for GPU recognition. Select Small and CPU for the CPU alternative.
 
+Model, processing, and microphone choices remain editable while loading,
+listening, and paused. Active listening continues with the latest choices after
+the current operation finishes. Changes while paused wait for Start listening.
+You can refresh connected microphones during a session. If the selected input
+disappears, choose another microphone before starting again. Changing settings
+keeps the counter and downloaded models; cleanup is not required.
+
 The V icon appears in the Windows tray beside the clock, possibly under the
 hidden-icons arrow. Click it to open the control panel. Right-click it for
 listening controls, overlay visibility, and Exit VPN Counter. Closing the

@@ -27,6 +27,12 @@ overlay size change. **Custom (drag)** unlocks manual positioning.
 The microphone is opened only after the model is ready and you start a session.
 Pause stops the microphone stream. Ending a session keeps the displayed count.
 
+Change the model, CPU/GPU processing, or microphone directly in the Recognition
+panel, including during a session. Active listening continues with your latest
+choices after the current download or recognition operation finishes. Changes
+while paused leave listening stopped; click Start listening when ready.
+The counter and cached models are kept. Cleanup is not needed to change settings.
+
 The **V icon in the Windows tray** (beside the clock, possibly inside the `^`
 hidden-icons menu) reopens the control panel with a click. Right-click it for
 listening controls, overlay visibility, or **Exit VPN Counter**. Closing the

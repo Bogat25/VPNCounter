@@ -70,6 +70,17 @@ history, and sets the count to zero. Manual corrections change the count without
 forgetting already observed speech. Ending a session releases the worker/model;
 pause/resume retains the loaded model for quick continuation.
 
+Recognition settings stay editable during loading, listening, and pause. Changing
+the model, processing device, or selected microphone stops the current worker
+asynchronously, waits for its current operation to finish, and starts one worker
+with the latest choices if listening was active. Changes while paused release
+the worker and wait for an explicit start. End, exit, and cleanup cancel a pending
+restart. Counter/history and cached model files are preserved; the timestamp
+ledger clears when the replacement worker starts its new audio timeline.
+Worker signal handlers check the sender so retired results and status updates
+cannot affect a replacement session. Microphone refresh blocks intermediate
+selection signals and requires a new selection if the active input disappears.
+
 Shutdown requests the worker to stop and waits without blocking the GUI event
 loop. It never forcibly terminates a thread using the GPU. A model download or
 inference already in progress finishes before shutdown completes. A local lock

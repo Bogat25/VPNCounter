@@ -1,6 +1,6 @@
 # Verification
 
-Checked on 2026-10-08 and 2026-10-09 on Windows 11, Python 3.12.10, and an NVIDIA GeForce
+Checked on 2026-10-08 through 2026-10-10 on Windows 11, Python 3.12.10, and an NVIDIA GeForce
 RTX 5060 Laptop GPU with 8151 MiB VRAM. Current source and packaged UI checks
 are for version 0.1.4. The initial hardware checks below used full Whisper
 large-v3, CUDA FP16, Hungarian, beam size 5, and minimum match confidence 0.45;
@@ -168,6 +168,29 @@ are excluded from Git. The reproducible source and dependency lock are committed
   matches with the tested build files were verified locally. The workflow checks both packaged formats and
   verifies both assets before publication. Actionlint and PowerShell syntax
   checks passed. GitHub publication was not run locally.
+
+## Changing recognition settings during a session
+
+Checked on 2026-10-10:
+
+- `uv run --extra gpu pytest`: **111 passed**. The regression cases cover model,
+  CPU/GPU, and microphone changes during loading, listening, and pause; rapid
+  changes; cancellation by End, exit, and cleanup; microphone refresh and
+  removal; rejection of retired worker signals; and preservation of the counter,
+  saved settings, and cached models. Confidence changes apply without restarting.
+- `uv run --extra gpu ruff check .`: passed.
+- A real Qt background thread with a simulated model loader and audio loop
+  confirmed that replacement waits for the previous load to finish, applies the
+  latest model choice, and keeps the GUI responsive. Both loads ran off the GUI
+  thread. These checks did not load Whisper weights or open a microphone.
+- Recognition controls remain editable while the previous operation finishes.
+  Active listening restarts with the latest choices; changing settings while
+  paused waits for Start listening. Cleanup is not needed.
+- Rebuilt both Windows distributions with `scripts/build.ps1`. The folder app
+  and standalone EXE both passed `--smoke-test`, including frozen speech imports,
+  UI rendering, the storage dialog, and download progress. Neither check opened
+  a microphone or loaded a model. Switching actual Whisper models and physical
+  microphones still needs a manual session.
 
 ## Rehearsal still needed
 

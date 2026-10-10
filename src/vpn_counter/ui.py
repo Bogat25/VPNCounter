@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import replace
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSignalBlocker, Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -141,6 +141,7 @@ class MainWindow(QMainWindow):
         self.count = self.settings.last_count
         self.ledger = MentionLedger()
         self.worker: SpeechWorker | None = None
+        self._restart_requested = False
         self.cleanup_worker: CleanupWorker | None = None
         self._cleanup_options: CleanupOptions | None = None
         self.cleanup_completed = False
@@ -336,6 +337,7 @@ class MainWindow(QMainWindow):
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.microphone_combo.setMinimumContentsLength(25)
+        self.microphone_combo.currentIndexChanged.connect(self._recognition_changed)
         setup_layout.addWidget(self.microphone_combo)
         meter_row = QHBoxLayout()
         self.meter = QProgressBar()
@@ -362,6 +364,7 @@ class MainWindow(QMainWindow):
         self.device_combo.addItem("CPU · INT8", "cpu")
         self.device_combo.setCurrentIndex(max(0, self.device_combo.findData(self.settings.device)))
         self.model_combo.currentIndexChanged.connect(self._model_changed)
+        self.device_combo.currentIndexChanged.connect(self._recognition_changed)
         grid.addWidget(self.model_combo, 1, 0)
         grid.addWidget(self.device_combo, 1, 1)
         grid.setColumnStretch(0, 1)
@@ -499,17 +502,22 @@ class MainWindow(QMainWindow):
 
     def _refresh_microphones(self) -> None:
         previous = self.microphone_combo.currentText() or self.settings.microphone
-        self.microphone_combo.clear()
-        try:
-            for microphone in microphones():
-                self.microphone_combo.addItem(microphone.label, microphone.index)
-            found = self.microphone_combo.findText(previous)
-            if found >= 0:
-                self.microphone_combo.setCurrentIndex(found)
-            if self.microphone_combo.count() == 0:
-                self._notice("No microphone found. Connect one and click Refresh.")
-        except Exception as error:
-            self._notice(f"Microphone unavailable: {error}")
+        with QSignalBlocker(self.microphone_combo):
+            self.microphone_combo.clear()
+            try:
+                for microphone in microphones():
+                    self.microphone_combo.addItem(microphone.label, microphone.index)
+                found = self.microphone_combo.findText(previous)
+                if found >= 0:
+                    self.microphone_combo.setCurrentIndex(found)
+                elif self.worker is not None:
+                    self.microphone_combo.setCurrentIndex(-1)
+                    self._notice("The selected microphone is unavailable. Choose another input.")
+                if self.microphone_combo.count() == 0:
+                    self._notice("No microphone found. Connect one and click Refresh.")
+            except Exception as error:
+                self._notice(f"Microphone unavailable: {error}")
+        self._recognition_changed()
 
     def _refresh_screens(self) -> None:
         self.screen_combo.blockSignals(True)
@@ -599,6 +607,41 @@ class MainWindow(QMainWindow):
     def _model_changed(self, _index: int) -> None:
         if self.model_combo.currentData() == "small":
             self.device_combo.setCurrentIndex(self.device_combo.findData("cpu"))
+        self._recognition_changed()
+
+    def _engine_options(self) -> EngineOptions:
+        return EngineOptions(
+            model=self.model_combo.currentData(),
+            device=self.device_combo.currentData(),
+            microphone_index=self.microphone_combo.currentData(),
+        )
+
+    def _recognition_changed(self, _index: int = 0) -> None:
+        if (
+            self.worker is None
+            or self._pending_close
+            or self._quit_requested
+            or self._cleanup_options is not None
+        ):
+            return
+        if self.state != "stopping" and self.worker.options == self._engine_options():
+            return
+        restart = self._restart_requested or self.state in ("loading", "listening")
+        if self.state != "stopping":
+            self.end_session()
+        self._restart_requested = restart
+        self.end_button.setEnabled(restart)
+        self.busy.setRange(0, 0)
+        self.busy.show()
+        self._set_status("Applying recognition settings after the current operation…")
+
+    def _current_worker_signal(self) -> bool:
+        sender = self.sender()
+        return sender is None or sender is self.worker
+
+    def _worker_warning(self, text: str) -> None:
+        if self._current_worker_signal() and self.state in ("loading", "listening"):
+            self._notice(text)
 
     def _notice(self, text: str) -> None:
         self.notice_label.setText(text)
@@ -617,7 +660,7 @@ class MainWindow(QMainWindow):
             widget.setEnabled(enabled)
 
     def toggle_listening(self) -> None:
-        if self._pending_close or self._cleanup_options is not None:
+        if self._pending_close or self._quit_requested or self._cleanup_options is not None:
             return
         if self.worker is not None:
             if self.state == "listening":
@@ -638,38 +681,38 @@ class MainWindow(QMainWindow):
             return
         self.ledger.clear()
         self.state = "loading"
-        self._enable_setup(False)
         self.start_button.setText("Preparing…")
         self.start_button.setEnabled(False)
         self.end_button.setEnabled(True)
         self.busy.setRange(0, 0)
         self.busy.show()
-        self.worker = SpeechWorker(
-            EngineOptions(
-                model=self.model_combo.currentData(),
-                device=self.device_combo.currentData(),
-                microphone_index=self.microphone_combo.currentData(),
-            ),
-            self,
-        )
+        self.worker = SpeechWorker(self._engine_options(), self)
         self.worker.status.connect(self._model_status)
         self.worker.download_progress.connect(self._download_progress)
         self.worker.listening.connect(self._listening)
         self.worker.batch_ready.connect(self._batch)
         self.worker.failed.connect(self._failed)
-        self.worker.warning.connect(self._notice)
+        self.worker.warning.connect(self._worker_warning)
         self.worker.finished.connect(self._finished)
         self.worker.start()
 
     def _model_status(self, text: str) -> None:
-        if self.state == "stopping" or self._cleanup_options is not None:
+        if (
+            not self._current_worker_signal()
+            or self.state not in ("loading", "listening")
+            or self._cleanup_options is not None
+        ):
             return
         if self.state == "loading":
             self.busy.setRange(0, 0)
         self._set_status(text)
 
     def _download_progress(self, percent: int) -> None:
-        if self.state != "loading" or self._cleanup_options is not None:
+        if (
+            not self._current_worker_signal()
+            or self.state != "loading"
+            or self._cleanup_options is not None
+        ):
             return
         percent = max(0, min(100, percent))
         self.busy.setRange(0, 100)
@@ -677,7 +720,7 @@ class MainWindow(QMainWindow):
         self._set_status(f"Downloading model · {percent}%")
 
     def _listening(self) -> None:
-        if self.state == "stopping":
+        if not self._current_worker_signal() or self.state != "loading":
             return
         self.state = "listening"
         self._active_since = time.monotonic()
@@ -692,20 +735,29 @@ class MainWindow(QMainWindow):
             self._active_since = None
 
     def end_session(self) -> None:
+        self._restart_requested = False
         if self.worker:
             self.state = "stopping"
             self.worker.stop()
             self._pause_clock()
             self.start_button.setEnabled(False)
             self.end_button.setEnabled(False)
+            if self._pending_close or self._quit_requested:
+                self._enable_setup(False)
             self._set_status("Stopping after the current model operation…")
 
     def _failed(self, message: str) -> None:
+        if not self._current_worker_signal() or self.state == "stopping":
+            return
         self.state = "error"
         self._set_status("Recognition needs attention")
         self._notice(message)
 
     def _finished(self) -> None:
+        if not self._current_worker_signal():
+            return
+        restart = self._restart_requested
+        self._restart_requested = False
         self._pause_clock()
         old_worker = self.worker
         self.worker = None
@@ -724,6 +776,8 @@ class MainWindow(QMainWindow):
             self._begin_cleanup()
         elif self._pending_close:
             self.close()
+        elif restart and not self._quit_requested:
+            self.toggle_listening()
 
     def open_storage(self) -> None:
         if self._cleanup_options is not None:
@@ -787,7 +841,8 @@ class MainWindow(QMainWindow):
 
     def _batch(self, batch: RecognitionBatch) -> None:
         if (
-            self.worker is None
+            not self._current_worker_signal()
+            or self.worker is None
             or self.state != "listening"
             or batch.generation != self.worker.generation
         ):
